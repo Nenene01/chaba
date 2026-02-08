@@ -16,10 +16,16 @@ impl WorktreeManager {
         Ok(WorktreeManager { git, config })
     }
 
-    /// Validate a path to prevent path traversal attacks
-    fn validate_path(path: &Path) -> Result<()> {
+    /// Validate a path to prevent path traversal and symlink attacks
+    ///
+    /// This function:
+    /// 1. Checks for parent directory (..) components
+    /// 2. Resolves symlinks via canonicalization
+    /// 3. Ensures the resolved path is within the allowed base directory
+    fn validate_path_secure(path: &Path, base_dir: &Path) -> Result<PathBuf> {
         use std::path::Component;
 
+        // Check for parent directory traversal
         for component in path.components() {
             if matches!(component, Component::ParentDir) {
                 return Err(ChabaError::ConfigError(
@@ -28,8 +34,73 @@ impl WorktreeManager {
             }
         }
 
-        Ok(())
+        // Resolve the base directory to its canonical form
+        let canonical_base = base_dir.canonicalize()
+            .map_err(|e| ChabaError::ConfigError(
+                format!("Failed to resolve base directory {}: {}", base_dir.display(), e)
+            ))?;
+
+        // Resolve the path to its canonical form
+        // For non-existent paths, validate the parent exists and is within base_dir
+        let canonical_path = if path.exists() {
+            path.canonicalize()
+                .map_err(|e| ChabaError::ConfigError(
+                    format!("Failed to resolve path {}: {}", path.display(), e)
+                ))?
+        } else {
+            // Ensure parent exists or can be created within base_dir
+            if let Some(parent) = path.parent() {
+                if parent.exists() {
+                    let canonical_parent = parent.canonicalize()
+                        .map_err(|e| ChabaError::ConfigError(
+                            format!("Failed to resolve parent path {}: {}", parent.display(), e)
+                        ))?;
+
+                    // Verify parent is within base_dir
+                    if !canonical_parent.starts_with(&canonical_base) {
+                        return Err(ChabaError::ConfigError(
+                            format!("Invalid path: {} is outside base directory {}",
+                                canonical_parent.display(), canonical_base.display())
+                        ));
+                    }
+
+                    // Return the canonical parent joined with filename
+                    if let Some(filename) = path.file_name() {
+                        canonical_parent.join(filename)
+                    } else {
+                        return Err(ChabaError::ConfigError(
+                            "Invalid path: no filename".to_string()
+                        ));
+                    }
+                } else {
+                    // Parent doesn't exist - just verify the path would be within base_dir
+                    // when created (simple prefix check on the input path)
+                    if !path.starts_with(base_dir) {
+                        return Err(ChabaError::ConfigError(
+                            format!("Invalid path: {} is outside base directory {}",
+                                path.display(), base_dir.display())
+                        ));
+                    }
+                    path.to_path_buf()
+                }
+            } else {
+                return Err(ChabaError::ConfigError(
+                    "Invalid path: no parent directory".to_string()
+                ));
+            }
+        };
+
+        // Final check: ensure canonical path is within base directory
+        if canonical_path.exists() && !canonical_path.starts_with(&canonical_base) {
+            return Err(ChabaError::ConfigError(
+                format!("Invalid path: {} is outside base directory {}",
+                    canonical_path.display(), canonical_base.display())
+            ));
+        }
+
+        Ok(canonical_path)
     }
+
 
     /// Create a new worktree for the given PR or branch
     pub async fn create(&self, pr_number: Option<u32>, branch: Option<String>, force: bool, custom_path: Option<String>) -> Result<ReviewState> {
@@ -50,11 +121,13 @@ impl WorktreeManager {
         // Determine worktree path
         let worktree_path = if let Some(custom) = custom_path {
             let path = PathBuf::from(custom);
-            Self::validate_path(&path)?;
-            path
+            // Use secure validation that checks for symlinks and path traversal
+            Self::validate_path_secure(&path, &self.config.worktree.base_dir)?
         } else {
             let name = self.config.worktree.naming_template.replace("{pr}", &pr.to_string());
-            self.config.worktree.base_dir.join(name)
+            let path = self.config.worktree.base_dir.join(name);
+            // Validate auto-generated path too
+            Self::validate_path_secure(&path, &self.config.worktree.base_dir)?
         };
 
         // Check if worktree already exists

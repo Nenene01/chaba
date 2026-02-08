@@ -1,6 +1,9 @@
 use chrono::{DateTime, Utc};
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
+use std::fs::File;
 use std::path::PathBuf;
+use tempfile::NamedTempFile;
 
 use crate::core::review_analysis::ReviewAnalysis;
 use crate::error::Result;
@@ -36,7 +39,7 @@ pub struct State {
 }
 
 impl State {
-    /// Load state from file
+    /// Load state from file with shared lock
     pub fn load() -> Result<Self> {
         let state_path = Self::state_file_path()?;
 
@@ -44,12 +47,18 @@ impl State {
             return Ok(State::default());
         }
 
+        // Open file with shared lock for reading
+        let file = File::open(&state_path)?;
+        file.lock_shared()?;
+
         let content = std::fs::read_to_string(&state_path)?;
         let state: State = serde_yaml::from_str(&content)?;
+
+        // Lock is automatically released when file is dropped
         Ok(state)
     }
 
-    /// Save state to file
+    /// Save state to file with atomic write
     pub fn save(&self) -> Result<()> {
         let state_path = Self::state_file_path()?;
 
@@ -59,17 +68,34 @@ impl State {
         }
 
         let content = serde_yaml::to_string(&self)?;
-        std::fs::write(&state_path, content)?;
 
-        // Set file permissions to 600 (rw-------)  on Unix systems
+        // Use tempfile + rename for atomic write
+        // Create temp file in same directory as target to ensure same filesystem
+        let temp_file = NamedTempFile::new_in(
+            state_path.parent().expect("state path should have parent directory")
+        )?;
+
+        // Lock the temp file exclusively
+        temp_file.as_file().lock_exclusive()?;
+
+        // Write to temp file
+        std::fs::write(temp_file.path(), &content)?;
+
+        // Set file permissions to 600 (rw-------) on Unix systems
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&state_path)?.permissions();
+            let mut perms = std::fs::metadata(temp_file.path())?.permissions();
             perms.set_mode(0o600);
-            std::fs::set_permissions(&state_path, perms)?;
+            std::fs::set_permissions(temp_file.path(), perms)?;
         }
 
+        // Atomic rename (replaces existing file)
+        // persist() returns PersistError which contains the underlying io::Error
+        temp_file.persist(&state_path)
+            .map_err(|e| e.error)?;
+
+        // Lock is automatically released when temp_file is dropped
         Ok(())
     }
 

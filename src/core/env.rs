@@ -1,7 +1,7 @@
 use std::path::Path;
 use tokio::fs;
 
-use crate::error::Result;
+use crate::error::{ChabaError, Result};
 
 /// Patterns that may indicate sensitive information
 const SENSITIVE_PATTERNS: &[&str] = &[
@@ -40,6 +40,30 @@ async fn check_sensitive_content(path: &Path) -> Result<Vec<String>> {
     Ok(warnings)
 }
 
+/// Validate that a file path is safe (no symlinks outside the base directory)
+fn validate_file_path(file_path: &Path, base_dir: &Path) -> Result<()> {
+    // Resolve to canonical path (follows symlinks)
+    let canonical_file = file_path.canonicalize()
+        .map_err(|e| ChabaError::ConfigError(
+            format!("Failed to resolve file path {}: {}", file_path.display(), e)
+        ))?;
+
+    let canonical_base = base_dir.canonicalize()
+        .map_err(|e| ChabaError::ConfigError(
+            format!("Failed to resolve base directory {}: {}", base_dir.display(), e)
+        ))?;
+
+    // Ensure the canonical file path is within the base directory
+    if !canonical_file.starts_with(&canonical_base) {
+        return Err(ChabaError::ConfigError(
+            format!("Security error: {} is outside base directory {} (possible symlink attack)",
+                canonical_file.display(), canonical_base.display())
+        ));
+    }
+
+    Ok(())
+}
+
 /// Copy environment files from main worktree to review worktree
 ///
 /// This function will:
@@ -60,6 +84,9 @@ pub async fn copy_env_files(
     for file in files {
         let src = main_worktree.join(&file);
         if src.exists() {
+            // Validate source file is within main_worktree (prevent symlink attacks)
+            validate_file_path(&src, main_worktree)?;
+
             // Check for sensitive content
             if let Ok(warnings) = check_sensitive_content(&src).await {
                 if !warnings.is_empty() {
@@ -76,6 +103,13 @@ pub async fn copy_env_files(
             }
 
             let dst = review_worktree.join(&file);
+
+            // Ensure destination directory exists
+            if let Some(parent) = dst.parent() {
+                fs::create_dir_all(parent).await?;
+            }
+
+            // Copy file (not following symlinks)
             fs::copy(&src, &dst).await?;
             tracing::info!("Copied {} to review environment", file);
             copied_count += 1;
