@@ -1,0 +1,130 @@
+# Chaba設定ファイルのサンプル
+# このファイルを chaba.yaml としてコピーして使用してください
+
+# Worktree設定
+worktree:
+  # worktreeを作成するベースディレクトリ
+  base_dir: "~/reviews"
+
+  # レビュー完了後に自動削除
+  auto_cleanup: true
+
+  # 自動削除までの日数（0で即座に削除）
+  keep_days: 7
+
+  # worktreeの命名規則
+  # {pr} = PR番号, {branch} = ブランチ名, {date} = 作成日
+  naming_template: "pr-{pr}"
+
+# Sandbox設定
+sandbox:
+  # 依存関係の自動インストール
+  auto_install_deps: true
+
+  # Node.jsバージョン管理（nvmを使用）
+  node_version: "lts"
+  # または特定バージョン: "20.11.0"
+
+  # 開発サーバーのポート範囲
+  port_range_start: 3000
+  port_range_end: 4000
+
+  # 環境変数のコピー元
+  # メインのworktreeから環境変数をコピー
+  copy_env_from_main: true
+
+  # 追加の環境変数ファイル
+  additional_env_files:
+    - ".env.local"
+    - ".env.review"
+
+# AIエージェント設定
+agents:
+  # Claude Code
+  claude:
+    enabled: true
+    model: "sonnet"  # sonnet, opus, haiku
+    max_turns: 10
+
+  # OpenAI Codex
+  codex:
+    enabled: true
+    model: "gpt-4"
+
+  # Google Gemini
+  gemini:
+    enabled: true
+    model: "gemini-pro"
+
+  # デフォルトレビューで使用するエージェント
+  default_review_agents:
+    - claude
+
+  # 詳細レビュー（--thoroughオプション）で使用
+  thorough_review_agents:
+    - claude
+    - codex
+    - gemini
+
+# MCP (Model Context Protocol) 設定
+mcp:
+  # Playwright MCP
+  playwright:
+    enabled: true
+    auto_run_tests: true
+    test_paths:
+      - "tests/e2e"
+      - "tests/integration"
+
+  # API Debug
+  api_debug:
+    enabled: true
+    base_url: "http://localhost"
+    auto_detect_port: true
+
+# GitHub設定
+github:
+  # PR番号から自動的にfetch
+  auto_fetch_pr: true
+
+  # レビューコメントのドラフトを作成
+  draft_review_comment: true
+
+  # レビュー完了後にGitHub上で承認
+  auto_approve: false
+
+  # PRのdiffを自動取得
+  auto_fetch_diff: true
+
+# Build & Simulator設定
+build:
+  # 自動ビルド
+  auto_build: true
+
+  # ビルドコマンド（プロジェクトタイプごと）
+  commands:
+    npm: "npm run build"
+    cargo: "cargo build"
+    python: "python setup.py build"
+
+  # シミュレータ起動コマンド
+  simulator:
+    ios: "open -a Simulator"
+    android: "emulator -avd Pixel_7_Pro_API_34"
+
+# ログ設定
+logging:
+  level: "info"  # debug, info, warn, error
+  output: "~/.chaba/logs"
+  format: "json"  # json, text
+
+# 通知設定
+notifications:
+  # レビュー準備完了時に通知
+  on_ready: true
+
+  # エラー発生時に通知
+  on_error: true
+
+  # 通知方法
+  method: "terminal"  # terminal, desktop, slack

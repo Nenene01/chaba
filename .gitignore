@@ -1,0 +1,44 @@
+# Build outputs
+target/
+dist/
+build/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Dependencies
+node_modules/
+vendor/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+*.log
+
+# Chaba specific
+.chaba/
+reviews/
+worktrees/
+sandboxes/
+
+# Test outputs
+coverage/
+*.test
+*.spec
+
+# Temporary files
+tmp/
+temp/
+*.tmp
