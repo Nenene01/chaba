@@ -33,6 +33,9 @@ reviews/
 worktrees/
 sandboxes/
 
+# Planning and internal notes (not for production)
+.tasks/
+
 # Test outputs
 coverage/
 *.test
@@ -42,3 +45,8 @@ coverage/
 tmp/
 temp/
 *.tmp
+
+
+# Added by cargo
+
+/target
