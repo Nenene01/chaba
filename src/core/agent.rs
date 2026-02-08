@@ -278,42 +278,22 @@ impl AgentManager {
     }
 
     /// Parse agent output and extract findings
-    /// This is a basic implementation - can be enhanced with JSON parsing
+    ///
+    /// This function attempts to parse the output in the following order:
+    /// 1. JSON format (structured output from agents)
+    /// 2. Enhanced pattern matching (keywords and severity indicators)
+    /// 3. Fallback to basic info finding
     fn parse_output(output: &str, analysis: &mut ReviewAnalysis) {
         // Store raw output as fallback
         analysis.set_raw_output(output.to_string());
 
-        // Basic pattern matching for common review patterns
-        // TODO: Enhance with JSON parsing for structured output
-
-        let lines: Vec<&str> = output.lines().collect();
-
-        for (i, line) in lines.iter().enumerate() {
-            // Look for severity indicators
-            if line.contains("CRITICAL") || line.contains("重大") {
-                let title = line.trim().to_string();
-                let description = lines.get(i + 1).unwrap_or(&"").trim().to_string();
-
-                let finding = Finding::new(
-                    Severity::Critical,
-                    Category::Security,
-                    title,
-                    description,
-                );
-                analysis.add_finding(finding);
-            } else if line.contains("WARNING") || line.contains("警告") {
-                let title = line.trim().to_string();
-                let description = lines.get(i + 1).unwrap_or(&"").trim().to_string();
-
-                let finding = Finding::new(
-                    Severity::Medium,
-                    Category::BestPractice,
-                    title,
-                    description,
-                );
-                analysis.add_finding(finding);
-            }
+        // Try JSON parsing first
+        if Self::try_parse_json(output, analysis) {
+            return;
         }
+
+        // Enhanced pattern matching with more keywords
+        Self::parse_with_patterns(output, analysis);
 
         // If no structured findings were extracted, create a general info finding
         if analysis.findings.is_empty() {
@@ -323,6 +303,152 @@ impl AgentManager {
                 "Review completed".to_string(),
                 "Agent completed review - see raw output for details".to_string(),
             );
+            analysis.add_finding(finding);
+        }
+    }
+
+    /// Try to parse output as JSON
+    fn try_parse_json(output: &str, analysis: &mut ReviewAnalysis) -> bool {
+        use serde_json::Value;
+
+        // Try to find JSON object or array in the output
+        // Look for JSON between common delimiters
+        let json_str = if let Some(start) = output.find('{') {
+            &output[start..]
+        } else if let Some(start) = output.find('[') {
+            &output[start..]
+        } else {
+            return false;
+        };
+
+        // Try to parse as JSON
+        let parsed: Value = match serde_json::from_str(json_str) {
+            Ok(v) => v,
+            Err(_) => {
+                // Try to extract JSON more carefully
+                for line in output.lines() {
+                    if line.trim().starts_with('{') || line.trim().starts_with('[') {
+                        if let Ok(v) = serde_json::from_str(line.trim()) {
+                            v
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                }
+                return false;
+            }
+        };
+
+        // Extract findings from JSON
+        let findings = if let Some(findings_array) = parsed.get("findings").and_then(|v| v.as_array()) {
+            findings_array
+        } else if parsed.is_array() {
+            parsed.as_array().unwrap()
+        } else {
+            return false;
+        };
+
+        for finding_value in findings {
+            if let Some(finding) = Self::parse_json_finding(finding_value) {
+                analysis.add_finding(finding);
+            }
+        }
+
+        // Extract score if present
+        if let Some(score) = parsed.get("score").and_then(|v| v.as_f64()) {
+            analysis.set_score(score as f32);
+        }
+
+        !analysis.findings.is_empty()
+    }
+
+    /// Parse a single finding from JSON value
+    fn parse_json_finding(value: &serde_json::Value) -> Option<Finding> {
+        let severity_str = value.get("severity")?.as_str()?;
+        let severity = match severity_str.to_lowercase().as_str() {
+            "critical" | "重大" => Severity::Critical,
+            "high" | "高" => Severity::High,
+            "medium" | "中" => Severity::Medium,
+            "low" | "低" => Severity::Low,
+            _ => Severity::Info,
+        };
+
+        let category_str = value.get("category").and_then(|v| v.as_str()).unwrap_or("other");
+        let category = match category_str.to_lowercase().as_str() {
+            "security" | "セキュリティ" => Category::Security,
+            "performance" | "パフォーマンス" => Category::Performance,
+            "bug" | "バグ" | "codequality" | "code_quality" => Category::CodeQuality,
+            "bestpractice" | "best_practice" | "ベストプラクティス" => Category::BestPractice,
+            "architecture" | "アーキテクチャ" => Category::Architecture,
+            "testing" | "テスト" => Category::Testing,
+            "documentation" | "ドキュメント" => Category::Documentation,
+            _ => Category::Other,
+        };
+
+        let title = value.get("title")?.as_str()?.to_string();
+        let description = value.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+        let mut finding = Finding::new(severity, category, title, description);
+
+        // Optional fields
+        if let Some(file) = value.get("file").and_then(|v| v.as_str()) {
+            finding = finding.with_file(file.to_string());
+        }
+        if let Some(line) = value.get("line").and_then(|v| v.as_u64()) {
+            finding = finding.with_line(line as u32);
+        }
+        if let Some(suggestion) = value.get("suggestion").and_then(|v| v.as_str()) {
+            finding = finding.with_suggestion(suggestion.to_string());
+        }
+
+        Some(finding)
+    }
+
+    /// Enhanced pattern matching for text output
+    fn parse_with_patterns(output: &str, analysis: &mut ReviewAnalysis) {
+        let lines: Vec<&str> = output.lines().collect();
+
+        for (i, line) in lines.iter().enumerate() {
+            let line_lower = line.to_lowercase();
+
+            // Determine severity based on keywords
+            let (severity, category) = if line_lower.contains("critical")
+                || line_lower.contains("重大")
+                || line_lower.contains("致命的") {
+                (Severity::Critical, Category::Security)
+            } else if line_lower.contains("security")
+                || line_lower.contains("セキュリティ")
+                || line_lower.contains("vulnerability")
+                || line_lower.contains("脆弱性") {
+                (Severity::High, Category::Security)
+            } else if line_lower.contains("error")
+                || line_lower.contains("エラー")
+                || line_lower.contains("bug")
+                || line_lower.contains("バグ") {
+                (Severity::High, Category::CodeQuality)
+            } else if line_lower.contains("warning")
+                || line_lower.contains("警告") {
+                (Severity::Medium, Category::BestPractice)
+            } else if line_lower.contains("performance")
+                || line_lower.contains("パフォーマンス")
+                || line_lower.contains("slow")
+                || line_lower.contains("遅い") {
+                (Severity::Medium, Category::Performance)
+            } else if line_lower.contains("suggestion")
+                || line_lower.contains("提案")
+                || line_lower.contains("improvement")
+                || line_lower.contains("改善") {
+                (Severity::Low, Category::BestPractice)
+            } else {
+                continue;
+            };
+
+            let title = line.trim().to_string();
+            let description = lines.get(i + 1).unwrap_or(&"").trim().to_string();
+
+            let finding = Finding::new(severity, category, title, description);
             analysis.add_finding(finding);
         }
     }
