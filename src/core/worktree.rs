@@ -131,14 +131,31 @@ impl WorktreeManager {
         };
 
         // Check if worktree already exists
-        if worktree_path.exists() && !force {
-            return Err(ChabaError::WorktreeExists(worktree_path));
-        }
+        if worktree_path.exists() {
+            if force {
+                // Force flag: remove without asking
+                self.git.remove_worktree(&worktree_path).await?;
+                tokio::fs::remove_dir_all(&worktree_path).await?;
+            } else {
+                // Interactive mode: ask user if they want to overwrite
+                use dialoguer::Confirm;
 
-        // Remove existing worktree if force is enabled
-        if worktree_path.exists() && force {
-            self.git.remove_worktree(&worktree_path).await?;
-            tokio::fs::remove_dir_all(&worktree_path).await?;
+                let overwrite = Confirm::new()
+                    .with_prompt(format!(
+                        "Worktree already exists at {}. Overwrite?",
+                        worktree_path.display()
+                    ))
+                    .default(false)
+                    .interact()
+                    .unwrap_or(false);
+
+                if overwrite {
+                    self.git.remove_worktree(&worktree_path).await?;
+                    tokio::fs::remove_dir_all(&worktree_path).await?;
+                } else {
+                    return Err(ChabaError::WorktreeExists(worktree_path));
+                }
+            }
         }
 
         // Create base directory if it doesn't exist

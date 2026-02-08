@@ -39,7 +39,22 @@ pub async fn execute(
     }
 
     // Run AI agents if requested
-    if with_agent || thorough {
+    let run_agents = if with_agent || thorough {
+        true
+    } else if config.agents.enabled {
+        // Interactive mode: ask if user wants to run agents
+        use dialoguer::Confirm;
+
+        Confirm::new()
+            .with_prompt("Run AI agent analysis?")
+            .default(false)
+            .interact()
+            .unwrap_or(false)
+    } else {
+        false
+    };
+
+    if run_agents {
         println!("\n🤖 Running AI agent analysis...");
 
         let agent_manager = AgentManager::new(config.agents);
