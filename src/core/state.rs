@@ -55,6 +55,16 @@ impl State {
 
         let content = serde_yaml::to_string(&self)?;
         std::fs::write(&state_path, content)?;
+
+        // Set file permissions to 600 (rw-------)  on Unix systems
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&state_path)?.permissions();
+            perms.set_mode(0o600);
+            std::fs::set_permissions(&state_path, perms)?;
+        }
+
         Ok(())
     }
 

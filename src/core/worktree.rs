@@ -1,5 +1,5 @@
 use chrono::Utc;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 use crate::core::{git::GitOps, state::{ReviewState, State}};
@@ -14,6 +14,21 @@ impl WorktreeManager {
     pub fn new(config: Config) -> Result<Self> {
         let git = GitOps::open()?;
         Ok(WorktreeManager { git, config })
+    }
+
+    /// Validate a path to prevent path traversal attacks
+    fn validate_path(path: &Path) -> Result<()> {
+        use std::path::Component;
+
+        for component in path.components() {
+            if matches!(component, Component::ParentDir) {
+                return Err(ChabaError::ConfigError(
+                    "Invalid path: parent directory (..) is not allowed".to_string()
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     /// Create a new worktree for the given PR or branch
@@ -34,7 +49,9 @@ impl WorktreeManager {
 
         // Determine worktree path
         let worktree_path = if let Some(custom) = custom_path {
-            PathBuf::from(custom)
+            let path = PathBuf::from(custom);
+            Self::validate_path(&path)?;
+            path
         } else {
             let name = self.config.worktree.naming_template.replace("{pr}", &pr.to_string());
             self.config.worktree.base_dir.join(name)

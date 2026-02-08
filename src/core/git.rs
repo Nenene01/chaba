@@ -35,7 +35,10 @@ impl GitOps {
 
         if !output.status.success() {
             let error = String::from_utf8_lossy(&output.stderr);
-            return Err(ChabaError::GitError(git2::Error::from_str(&error)));
+            return Err(ChabaError::Other(anyhow::anyhow!(
+                "Git operation failed: {}",
+                error
+            )));
         }
 
         Ok(())
@@ -53,7 +56,10 @@ impl GitOps {
 
         if !output.status.success() {
             let error = String::from_utf8_lossy(&output.stderr);
-            return Err(ChabaError::GitError(git2::Error::from_str(&error)));
+            return Err(ChabaError::Other(anyhow::anyhow!(
+                "Git operation failed: {}",
+                error
+            )));
         }
 
         Ok(())
@@ -71,13 +77,18 @@ impl GitOps {
 
         if !output.status.success() {
             let error = String::from_utf8_lossy(&output.stderr);
-            return Err(ChabaError::GitError(git2::Error::from_str(&error)));
+            return Err(ChabaError::Other(anyhow::anyhow!(
+                "Git operation failed: {}",
+                error
+            )));
         }
 
         Ok(())
     }
 
     /// List all worktrees
+    /// Reserved for Phase 3: AI Agent integration
+    #[allow(dead_code)]
     pub async fn list_worktrees(&self) -> Result<Vec<PathBuf>> {
         let repo_path = self.repo_root();
 
@@ -89,7 +100,10 @@ impl GitOps {
 
         if !output.status.success() {
             let error = String::from_utf8_lossy(&output.stderr);
-            return Err(ChabaError::GitError(git2::Error::from_str(&error)));
+            return Err(ChabaError::Other(anyhow::anyhow!(
+                "Git operation failed: {}",
+                error
+            )));
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
