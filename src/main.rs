@@ -54,6 +54,13 @@ enum Commands {
     /// List active review environments
     List,
 
+    /// Show status of a review environment
+    Status {
+        /// Pull request number
+        #[arg(short, long)]
+        pr: u32,
+    },
+
     /// Initialize configuration
     Config {
         /// Initialize local config in current directory
@@ -82,6 +89,7 @@ async fn main() {
         } => commands::review::execute(pr, branch, force, worktree).await,
         Commands::Cleanup { pr } => commands::cleanup::execute(pr).await,
         Commands::List => commands::list::execute().await,
+        Commands::Status { pr } => commands::status::execute(pr).await,
         Commands::Config { local } => commands::config::execute(local).await,
     };
 

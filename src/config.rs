@@ -7,6 +7,9 @@ use crate::error::Result;
 pub struct Config {
     #[serde(default)]
     pub worktree: WorktreeConfig,
+
+    #[serde(default)]
+    pub sandbox: SandboxConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,10 +49,110 @@ fn default_keep_days() -> u32 {
     7
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxConfig {
+    /// Auto install dependencies
+    #[serde(default = "default_auto_install_deps")]
+    pub auto_install_deps: bool,
+
+    /// Copy environment files from main worktree
+    #[serde(default = "default_copy_env_from_main")]
+    pub copy_env_from_main: bool,
+
+    /// Additional environment files to copy
+    #[serde(default)]
+    pub additional_env_files: Vec<String>,
+
+    /// Node.js configuration
+    #[serde(default)]
+    pub node: NodeConfig,
+
+    /// Port configuration
+    #[serde(default)]
+    pub port: PortConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeConfig {
+    /// Package manager: auto, npm, yarn, pnpm, bun
+    #[serde(default = "default_package_manager")]
+    pub package_manager: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PortConfig {
+    /// Enable automatic port assignment
+    #[serde(default = "default_port_enabled")]
+    pub enabled: bool,
+
+    /// Port range start
+    #[serde(default = "default_port_range_start")]
+    pub range_start: u16,
+
+    /// Port range end
+    #[serde(default = "default_port_range_end")]
+    pub range_end: u16,
+}
+
+fn default_auto_install_deps() -> bool {
+    true
+}
+
+fn default_copy_env_from_main() -> bool {
+    true
+}
+
+fn default_package_manager() -> String {
+    "auto".to_string()
+}
+
+fn default_port_enabled() -> bool {
+    true
+}
+
+fn default_port_range_start() -> u16 {
+    3000
+}
+
+fn default_port_range_end() -> u16 {
+    4000
+}
+
+impl Default for SandboxConfig {
+    fn default() -> Self {
+        SandboxConfig {
+            auto_install_deps: default_auto_install_deps(),
+            copy_env_from_main: default_copy_env_from_main(),
+            additional_env_files: vec![".env.local".to_string()],
+            node: NodeConfig::default(),
+            port: PortConfig::default(),
+        }
+    }
+}
+
+impl Default for NodeConfig {
+    fn default() -> Self {
+        NodeConfig {
+            package_manager: default_package_manager(),
+        }
+    }
+}
+
+impl Default for PortConfig {
+    fn default() -> Self {
+        PortConfig {
+            enabled: default_port_enabled(),
+            range_start: default_port_range_start(),
+            range_end: default_port_range_end(),
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Config {
             worktree: WorktreeConfig::default(),
+            sandbox: SandboxConfig::default(),
         }
     }
 }

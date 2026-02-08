@@ -1,7 +1,6 @@
 use crate::config::Config;
 use crate::core::worktree::WorktreeManager;
 use crate::error::Result;
-use chrono::Local;
 
 pub async fn execute() -> Result<()> {
     let config = Config::load()?;

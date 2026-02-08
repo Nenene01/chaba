@@ -64,16 +64,26 @@ impl WorktreeManager {
         tracing::info!("Creating worktree at: {}", worktree_path.display());
         self.git.add_worktree(&worktree_path, &format!("origin/{}", branch_name)).await?;
 
-        // Create review state
+        // Phase 2: Setup sandbox environment
+        let mut state = State::load()?;
+        let sandbox_manager = super::sandbox::SandboxManager::new(self.config.sandbox.clone());
+        let sandbox_info = sandbox_manager
+            .setup(&worktree_path, &self.git.repo_root(), &state)
+            .await?;
+
+        // Create review state with sandbox info
         let review = ReviewState {
             pr_number: pr,
             branch: branch_name.clone(),
             worktree_path: worktree_path.clone(),
             created_at: Utc::now(),
+            port: sandbox_info.port,
+            project_type: sandbox_info.project_type,
+            deps_installed: sandbox_info.deps_installed,
+            env_copied: sandbox_info.env_copied,
         };
 
         // Save state
-        let mut state = State::load()?;
         state.add_review(review.clone())?;
 
         Ok(review)

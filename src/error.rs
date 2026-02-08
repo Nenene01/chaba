@@ -36,6 +36,9 @@ pub enum ChabaError {
     #[error("Invalid PR number or branch name")]
     InvalidInput,
 
+    #[error("No available port in range {range_start}-{range_end}. Try cleaning up old review environments.")]
+    NoAvailablePort { range_start: u16, range_end: u16 },
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

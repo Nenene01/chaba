@@ -10,6 +10,19 @@ pub struct ReviewState {
     pub branch: String,
     pub worktree_path: PathBuf,
     pub created_at: DateTime<Utc>,
+
+    // Phase 2: Sandbox environment info
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_type: Option<String>,
+
+    #[serde(default)]
+    pub deps_installed: bool,
+
+    #[serde(default)]
+    pub env_copied: bool,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
