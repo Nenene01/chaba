@@ -75,6 +75,7 @@ mod tests {
             project_type: None,
             deps_installed: false,
             env_copied: false,
+            agent_analyses: Vec::new(),
         });
 
         let port = manager.assign_port(&state).unwrap();
@@ -96,6 +97,7 @@ mod tests {
             project_type: None,
             deps_installed: false,
             env_copied: false,
+            agent_analyses: Vec::new(),
         });
 
         let result = manager.assign_port(&state);

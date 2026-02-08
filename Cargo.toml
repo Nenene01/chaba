@@ -9,6 +9,10 @@ license = "MIT"
 keywords = ["git", "worktree", "code-review", "ai-agent", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 
+[lib]
+name = "chaba"
+path = "src/lib.rs"
+
 [[bin]]
 name = "chaba"
 path = "src/main.rs"

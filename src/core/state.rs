@@ -101,3 +101,272 @@ impl State {
         Ok(home.join(".chaba").join("state.yaml"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::review_analysis::{Finding, ReviewAnalysis, Severity, Category};
+
+    #[test]
+    fn test_state_default() {
+        let state = State::default();
+        assert!(state.reviews.is_empty());
+    }
+
+    #[test]
+    fn test_review_state_creation() {
+        let review = ReviewState {
+            pr_number: 123,
+            branch: "feature/test".to_string(),
+            worktree_path: PathBuf::from("/tmp/test"),
+            created_at: Utc::now(),
+            port: Some(3000),
+            project_type: Some("node".to_string()),
+            deps_installed: true,
+            env_copied: true,
+            agent_analyses: Vec::new(),
+        };
+
+        assert_eq!(review.pr_number, 123);
+        assert_eq!(review.branch, "feature/test");
+        assert_eq!(review.port, Some(3000));
+        assert!(review.deps_installed);
+        assert!(review.env_copied);
+        assert!(review.agent_analyses.is_empty());
+    }
+
+    #[test]
+    fn test_state_add_review() {
+        let mut state = State::default();
+
+        let review = ReviewState {
+            pr_number: 123,
+            branch: "feature/test".to_string(),
+            worktree_path: PathBuf::from("/tmp/test"),
+            created_at: Utc::now(),
+            port: Some(3000),
+            project_type: Some("node".to_string()),
+            deps_installed: true,
+            env_copied: true,
+            agent_analyses: Vec::new(),
+        };
+
+        state.reviews.push(review);
+        assert_eq!(state.reviews.len(), 1);
+        assert_eq!(state.reviews[0].pr_number, 123);
+    }
+
+    #[test]
+    fn test_state_get_review() {
+        let mut state = State::default();
+
+        let review1 = ReviewState {
+            pr_number: 123,
+            branch: "feature/test1".to_string(),
+            worktree_path: PathBuf::from("/tmp/test1"),
+            created_at: Utc::now(),
+            port: Some(3000),
+            project_type: Some("node".to_string()),
+            deps_installed: true,
+            env_copied: true,
+            agent_analyses: Vec::new(),
+        };
+
+        let review2 = ReviewState {
+            pr_number: 456,
+            branch: "feature/test2".to_string(),
+            worktree_path: PathBuf::from("/tmp/test2"),
+            created_at: Utc::now(),
+            port: Some(3001),
+            project_type: Some("rust".to_string()),
+            deps_installed: false,
+            env_copied: false,
+            agent_analyses: Vec::new(),
+        };
+
+        state.reviews.push(review1);
+        state.reviews.push(review2);
+
+        let found = state.get_review(123);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().branch, "feature/test1");
+
+        let not_found = state.get_review(999);
+        assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn test_state_remove_review() {
+        let mut state = State::default();
+
+        let review = ReviewState {
+            pr_number: 123,
+            branch: "feature/test".to_string(),
+            worktree_path: PathBuf::from("/tmp/test"),
+            created_at: Utc::now(),
+            port: None,
+            project_type: None,
+            deps_installed: false,
+            env_copied: false,
+            agent_analyses: Vec::new(),
+        };
+
+        state.reviews.push(review);
+        assert_eq!(state.reviews.len(), 1);
+
+        state.reviews.retain(|r| r.pr_number != 123);
+        assert_eq!(state.reviews.len(), 0);
+    }
+
+    #[test]
+    fn test_review_state_with_agent_analyses() {
+        let mut analysis = ReviewAnalysis::new("claude".to_string());
+        analysis.add_finding(Finding::new(
+            Severity::High,
+            Category::Security,
+            "Security issue".to_string(),
+            "Fix this vulnerability".to_string(),
+        ));
+
+        let review = ReviewState {
+            pr_number: 123,
+            branch: "feature/test".to_string(),
+            worktree_path: PathBuf::from("/tmp/test"),
+            created_at: Utc::now(),
+            port: Some(3000),
+            project_type: Some("node".to_string()),
+            deps_installed: true,
+            env_copied: true,
+            agent_analyses: vec![analysis],
+        };
+
+        assert_eq!(review.agent_analyses.len(), 1);
+        assert_eq!(review.agent_analyses[0].agent, "claude");
+        assert_eq!(review.agent_analyses[0].findings.len(), 1);
+    }
+
+    #[test]
+    fn test_state_serialization() {
+        let review = ReviewState {
+            pr_number: 123,
+            branch: "feature/test".to_string(),
+            worktree_path: PathBuf::from("/tmp/test"),
+            created_at: Utc::now(),
+            port: Some(3000),
+            project_type: Some("node".to_string()),
+            deps_installed: true,
+            env_copied: true,
+            agent_analyses: Vec::new(),
+        };
+
+        let state = State {
+            reviews: vec![review],
+        };
+
+        let yaml = serde_yaml::to_string(&state).unwrap();
+        assert!(yaml.contains("pr_number: 123"));
+        assert!(yaml.contains("branch: feature/test"));
+        assert!(yaml.contains("port: 3000"));
+        assert!(yaml.contains("project_type: node"));
+    }
+
+    #[test]
+    fn test_state_deserialization() {
+        let yaml = r#"
+reviews:
+  - pr_number: 123
+    branch: feature/test
+    worktree_path: /tmp/test
+    created_at: 2024-01-01T00:00:00Z
+    port: 3000
+    project_type: node
+    deps_installed: true
+    env_copied: true
+"#;
+
+        let state: State = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(state.reviews.len(), 1);
+        assert_eq!(state.reviews[0].pr_number, 123);
+        assert_eq!(state.reviews[0].branch, "feature/test");
+        assert_eq!(state.reviews[0].port, Some(3000));
+        assert_eq!(state.reviews[0].project_type, Some("node".to_string()));
+        assert!(state.reviews[0].deps_installed);
+        assert!(state.reviews[0].env_copied);
+        assert!(state.reviews[0].agent_analyses.is_empty());
+    }
+
+    #[test]
+    fn test_backward_compatibility_without_phase2_fields() {
+        // Old format without Phase 2 fields
+        let yaml = r#"
+reviews:
+  - pr_number: 123
+    branch: feature/test
+    worktree_path: /tmp/test
+    created_at: 2024-01-01T00:00:00Z
+"#;
+
+        let state: State = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(state.reviews.len(), 1);
+        assert_eq!(state.reviews[0].pr_number, 123);
+        assert_eq!(state.reviews[0].port, None);
+        assert_eq!(state.reviews[0].project_type, None);
+        assert!(!state.reviews[0].deps_installed);
+        assert!(!state.reviews[0].env_copied);
+        assert!(state.reviews[0].agent_analyses.is_empty());
+    }
+
+    #[test]
+    fn test_state_serialization_skips_empty_agent_analyses() {
+        let review = ReviewState {
+            pr_number: 123,
+            branch: "feature/test".to_string(),
+            worktree_path: PathBuf::from("/tmp/test"),
+            created_at: Utc::now(),
+            port: Some(3000),
+            project_type: Some("node".to_string()),
+            deps_installed: true,
+            env_copied: true,
+            agent_analyses: Vec::new(),
+        };
+
+        let state = State {
+            reviews: vec![review],
+        };
+
+        let yaml = serde_yaml::to_string(&state).unwrap();
+        // Should not contain agent_analyses field when empty
+        assert!(!yaml.contains("agent_analyses"));
+    }
+
+    #[test]
+    fn test_state_serialization_includes_agent_analyses() {
+        let mut analysis = ReviewAnalysis::new("claude".to_string());
+        analysis.add_finding(Finding::new(
+            Severity::High,
+            Category::Security,
+            "Issue".to_string(),
+            "Description".to_string(),
+        ));
+
+        let review = ReviewState {
+            pr_number: 123,
+            branch: "feature/test".to_string(),
+            worktree_path: PathBuf::from("/tmp/test"),
+            created_at: Utc::now(),
+            port: Some(3000),
+            project_type: Some("node".to_string()),
+            deps_installed: true,
+            env_copied: true,
+            agent_analyses: vec![analysis],
+        };
+
+        let state = State {
+            reviews: vec![review],
+        };
+
+        let yaml = serde_yaml::to_string(&state).unwrap();
+        // Should contain agent_analyses when not empty
+        assert!(yaml.contains("agent_analyses"));
+    }
+}

@@ -1,11 +1,6 @@
+use chaba::commands;
 use clap::{Parser, Subcommand};
 use std::process;
-
-mod cli;
-mod commands;
-mod config;
-mod core;
-mod error;
 
 #[derive(Parser)]
 #[command(
