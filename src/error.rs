@@ -92,6 +92,13 @@ pub enum ChabaError {
     #[error("No available port in range {range_start}-{range_end}. Try cleaning up old review environments.")]
     NoAvailablePort { range_start: u16, range_end: u16 },
 
+    #[error("AI agent '{agent}' execution failed\nstderr: {stderr}")]
+    AgentExecutionError {
+        agent: String,
+        stdout: String,
+        stderr: String,
+    },
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

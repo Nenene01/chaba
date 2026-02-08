@@ -1,19 +1,32 @@
+use std::ffi::OsStr;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::process::Command;
 
 use crate::config::AgentsConfig;
+use crate::core::command::{CommandRunner, LiveCommandRunner};
 use crate::core::review_analysis::{ReviewAnalysis, Finding, Severity, Category};
 use crate::error::{ChabaError, Result};
 
 pub struct AgentManager {
     config: AgentsConfig,
+    runner: Arc<dyn CommandRunner + Send + Sync>,
 }
 
 impl AgentManager {
-    /// Create a new AgentManager
+    /// Create a new AgentManager with custom command runner
+    ///
+    /// This constructor is primarily for testing, allowing injection of a mock runner.
+    pub fn new_with_runner(
+        config: AgentsConfig,
+        runner: Arc<dyn CommandRunner + Send + Sync>,
+    ) -> Self {
+        AgentManager { config, runner }
+    }
+
+    /// Create a new AgentManager with default LiveCommandRunner
     pub fn new(config: AgentsConfig) -> Self {
-        AgentManager { config }
+        Self::new_with_runner(config, Arc::new(LiveCommandRunner))
     }
 
     /// Run agents for PR review
@@ -53,9 +66,10 @@ impl AgentManager {
             let agent = agent.clone();
             let worktree_path = worktree_path.to_path_buf();
             let timeout = self.config.timeout;
+            let runner = self.runner.clone();
 
             tasks.push(tokio::spawn(async move {
-                Self::run_single_agent(&agent, pr_number, &worktree_path, timeout).await
+                Self::run_single_agent(&agent, pr_number, &worktree_path, timeout, runner).await
             }));
         }
 
@@ -109,7 +123,7 @@ impl AgentManager {
 
         for agent in agents {
             eprintln!("Running {} analysis...", agent);
-            match Self::run_single_agent(agent, pr_number, worktree_path, self.config.timeout).await {
+            match Self::run_single_agent(agent, pr_number, worktree_path, self.config.timeout, self.runner.clone()).await {
                 Ok(analysis) => {
                     eprintln!("✓ {} completed", agent);
                     analyses.push(analysis);
@@ -137,12 +151,13 @@ impl AgentManager {
         pr_number: u32,
         worktree_path: &Path,
         timeout_secs: u64,
+        runner: Arc<dyn CommandRunner + Send + Sync>,
     ) -> Result<ReviewAnalysis> {
         let timeout = Duration::from_secs(timeout_secs);
 
         let result = tokio::time::timeout(
             timeout,
-            Self::execute_agent(agent, pr_number, worktree_path),
+            Self::execute_agent(agent, pr_number, worktree_path, runner),
         )
         .await;
 
@@ -162,13 +177,14 @@ impl AgentManager {
         agent: &str,
         pr_number: u32,
         worktree_path: &Path,
+        runner: Arc<dyn CommandRunner + Send + Sync>,
     ) -> Result<ReviewAnalysis> {
         let mut analysis = ReviewAnalysis::new(agent.to_string());
 
         match agent {
-            "claude" => Self::run_claude(pr_number, worktree_path, &mut analysis).await?,
-            "codex" => Self::run_codex(pr_number, worktree_path, &mut analysis).await?,
-            "gemini" => Self::run_gemini(pr_number, worktree_path, &mut analysis).await?,
+            "claude" => Self::run_claude(pr_number, worktree_path, &mut analysis, runner).await?,
+            "codex" => Self::run_codex(pr_number, worktree_path, &mut analysis, runner).await?,
+            "gemini" => Self::run_gemini(pr_number, worktree_path, &mut analysis, runner).await?,
             _ => {
                 return Err(ChabaError::ConfigError(format!(
                     "Unknown agent: {}",
@@ -185,27 +201,39 @@ impl AgentManager {
         pr_number: u32,
         worktree_path: &Path,
         analysis: &mut ReviewAnalysis,
+        runner: Arc<dyn CommandRunner + Send + Sync>,
     ) -> Result<()> {
         let prompt = format!(
             "PR #{} のコードレビューを実施してください。品質、セキュリティ、パフォーマンスの観点から分析し、改善点を指摘してください。",
             pr_number
         );
 
-        let output = Command::new("claude")
-            .current_dir(worktree_path)
-            .args(["--model", "sonnet", "--yes", &prompt])
-            .output()
+        let output = runner
+            .run(
+                "claude",
+                &[
+                    "--model".as_ref(),
+                    "sonnet".as_ref(),
+                    "--yes".as_ref(),
+                    OsStr::new(&prompt),
+                ],
+                worktree_path,
+            )
             .await?;
 
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             Self::parse_output(&stdout, analysis);
+            Ok(())
         } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            analysis.set_raw_output(stderr.to_string());
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            Err(ChabaError::AgentExecutionError {
+                agent: "claude".to_string(),
+                stdout,
+                stderr,
+            })
         }
-
-        Ok(())
     }
 
     /// Run Codex agent
@@ -213,33 +241,40 @@ impl AgentManager {
         pr_number: u32,
         worktree_path: &Path,
         analysis: &mut ReviewAnalysis,
+        runner: Arc<dyn CommandRunner + Send + Sync>,
     ) -> Result<()> {
         let prompt = format!(
             "このPR #{}のコードをレビューしてください。バグ、セキュリティ問題、ベストプラクティス違反を指摘してください。",
             pr_number
         );
 
-        let output = Command::new("codex")
-            .current_dir(worktree_path)
-            .args([
-                "exec",
-                "--full-auto",
-                "--sandbox",
-                "read-only",
-                &prompt,
-            ])
-            .output()
+        let output = runner
+            .run(
+                "codex",
+                &[
+                    "exec".as_ref(),
+                    "--full-auto".as_ref(),
+                    "--sandbox".as_ref(),
+                    "read-only".as_ref(),
+                    OsStr::new(&prompt),
+                ],
+                worktree_path,
+            )
             .await?;
 
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             Self::parse_output(&stdout, analysis);
+            Ok(())
         } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            analysis.set_raw_output(stderr.to_string());
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            Err(ChabaError::AgentExecutionError {
+                agent: "codex".to_string(),
+                stdout,
+                stderr,
+            })
         }
-
-        Ok(())
     }
 
     /// Run Gemini agent
@@ -247,34 +282,41 @@ impl AgentManager {
         pr_number: u32,
         worktree_path: &Path,
         analysis: &mut ReviewAnalysis,
+        runner: Arc<dyn CommandRunner + Send + Sync>,
     ) -> Result<()> {
         let prompt = format!(
             "このPR #{}を戦略的視点からレビューしてください。アーキテクチャ、設計パターン、拡張性について分析してください。",
             pr_number
         );
 
-        let output = Command::new("gemini")
-            .current_dir(worktree_path)
-            .args([
-                "-m",
-                "gemini-2.0-flash-001",
-                "-s",
-                "-y",
-                "-p",
-                &prompt,
-            ])
-            .output()
+        let output = runner
+            .run(
+                "gemini",
+                &[
+                    "-m".as_ref(),
+                    "gemini-2.5-pro".as_ref(),
+                    "-s".as_ref(),
+                    "-y".as_ref(),
+                    "-p".as_ref(),
+                    OsStr::new(&prompt),
+                ],
+                worktree_path,
+            )
             .await?;
 
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             Self::parse_output(&stdout, analysis);
+            Ok(())
         } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            analysis.set_raw_output(stderr.to_string());
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            Err(ChabaError::AgentExecutionError {
+                agent: "gemini".to_string(),
+                stdout,
+                stderr,
+            })
         }
-
-        Ok(())
     }
 
     /// Parse agent output and extract findings
@@ -451,5 +493,181 @@ impl AgentManager {
             let finding = Finding::new(severity, category, title, description);
             analysis.add_finding(finding);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::{ExitStatus, Output};
+    use std::sync::Mutex;
+
+    // Simple mock implementation for testing
+    struct TestCommandRunner {
+        calls: Mutex<Vec<(String, Vec<String>)>>, // (program, args)
+        return_output: Output,
+    }
+
+    impl TestCommandRunner {
+        fn new(output: Output) -> Self {
+            Self {
+                calls: Mutex::new(Vec::new()),
+                return_output: output,
+            }
+        }
+
+        fn get_calls(&self) -> Vec<(String, Vec<String>)> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl CommandRunner for TestCommandRunner {
+        async fn run(
+            &self,
+            program: &str,
+            args: &[&OsStr],
+            _current_dir: &Path,
+        ) -> std::result::Result<Output, std::io::Error> {
+            let mut calls = self.calls.lock().unwrap();
+            calls.push((
+                program.to_string(),
+                args.iter()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .collect(),
+            ));
+            Ok(self.return_output.clone())
+        }
+    }
+
+    // Helper to create a successful output
+    fn success_output(stdout: &str) -> Output {
+        Output {
+            status: ExitStatus::from_raw(0),
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: vec![],
+        }
+    }
+
+    // Helper to create a failed output
+    fn error_output(stderr: &str) -> Output {
+        Output {
+            status: ExitStatus::from_raw(1),
+            stdout: vec![],
+            stderr: stderr.as_bytes().to_vec(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_parse_output_json() {
+        let json_output = r#"
+        {
+            "findings": [
+                {
+                    "severity": "high",
+                    "category": "security",
+                    "title": "SQL Injection vulnerability",
+                    "description": "User input not sanitized"
+                }
+            ],
+            "score": 4.2
+        }
+        "#;
+
+        let mut analysis = ReviewAnalysis::new("test".to_string());
+        AgentManager::parse_output(json_output, &mut analysis);
+
+        assert_eq!(analysis.findings.len(), 1);
+        assert_eq!(analysis.findings[0].severity, Severity::High);
+        assert_eq!(analysis.findings[0].category, Category::Security);
+        assert!(analysis.score.is_some());
+        assert_eq!(analysis.score.unwrap(), 4.2);
+    }
+
+    #[tokio::test]
+    async fn test_parse_output_pattern_matching() {
+        let text_output = "Critical: Security vulnerability found\nThis is a serious issue";
+
+        let mut analysis = ReviewAnalysis::new("test".to_string());
+        AgentManager::parse_output(text_output, &mut analysis);
+
+        assert_eq!(analysis.findings.len(), 1);
+        assert_eq!(analysis.findings[0].severity, Severity::Critical);
+        assert_eq!(analysis.findings[0].category, Category::Security);
+    }
+
+    #[tokio::test]
+    async fn test_parse_output_fallback() {
+        let plain_output = "Some analysis text without keywords";
+
+        let mut analysis = ReviewAnalysis::new("test".to_string());
+        AgentManager::parse_output(plain_output, &mut analysis);
+
+        // Should create a fallback Info finding
+        assert_eq!(analysis.findings.len(), 1);
+        assert_eq!(analysis.findings[0].severity, Severity::Info);
+        assert!(analysis.raw_output.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_run_claude_success() {
+        let mock_output = success_output("Warning: Code quality issue\nConsider refactoring");
+        let mock_runner = Arc::new(TestCommandRunner::new(mock_output));
+
+        let mut analysis = ReviewAnalysis::new("claude".to_string());
+        let result =
+            AgentManager::run_claude(123, Path::new("/tmp"), &mut analysis, mock_runner.clone())
+                .await;
+
+        assert!(result.is_ok());
+        assert!(!analysis.findings.is_empty());
+
+        let calls = mock_runner.get_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, "claude");
+        assert!(calls[0].1.contains(&"--model".to_string()));
+        assert!(calls[0].1.contains(&"sonnet".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_run_claude_error() {
+        let mock_output = error_output("Authentication failed");
+        let mock_runner = Arc::new(TestCommandRunner::new(mock_output));
+
+        let mut analysis = ReviewAnalysis::new("claude".to_string());
+        let result =
+            AgentManager::run_claude(123, Path::new("/tmp"), &mut analysis, mock_runner).await;
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ChabaError::AgentExecutionError { agent, stderr, .. } => {
+                assert_eq!(agent, "claude");
+                assert!(stderr.contains("Authentication failed"));
+            }
+            _ => panic!("Expected AgentExecutionError"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_agent_manager_new() {
+        let config = AgentsConfig::default();
+        let manager = AgentManager::new(config);
+
+        // Should have LiveCommandRunner by default
+        assert!(Arc::strong_count(&manager.runner) >= 1);
+    }
+
+    #[tokio::test]
+    async fn test_agent_manager_new_with_runner() {
+        let config = AgentsConfig::default();
+        let mock_runner: Arc<dyn CommandRunner + Send + Sync> =
+            Arc::new(TestCommandRunner::new(success_output("")));
+
+        let manager = AgentManager::new_with_runner(config, mock_runner.clone());
+
+        // Verify runner was injected (Arc count should be 2: manager + test)
+        assert_eq!(Arc::strong_count(&manager.runner), 2);
     }
 }
