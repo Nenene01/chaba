@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod command;
 pub mod env;
 pub mod git;
 pub mod installer;

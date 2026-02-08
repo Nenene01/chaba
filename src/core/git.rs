@@ -1,18 +1,46 @@
 use git2::Repository;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use tokio::process::Command;
+use std::sync::Arc;
 
+use crate::core::command::{CommandRunner, LiveCommandRunner};
 use crate::error::{ChabaError, Result};
 
 pub struct GitOps {
     repo: Repository,
+    runner: Arc<dyn CommandRunner + Send + Sync>,
 }
 
 impl GitOps {
+    /// Create a new GitOps instance with a specific repository and command runner
+    ///
+    /// This constructor is primarily for testing, allowing injection of a mock runner.
+    ///
+    /// # Arguments
+    ///
+    /// * `repo_path` - Path to the git repository
+    /// * `runner` - Command runner implementation (LiveCommandRunner in production, mock in tests)
+    pub fn new(repo_path: &Path, runner: Arc<dyn CommandRunner + Send + Sync>) -> Result<Self> {
+        let repo = Repository::open(repo_path).map_err(|_| ChabaError::NotInGitRepo)?;
+        Ok(GitOps { repo, runner })
+    }
+
     /// Open repository from current directory or parent directories
+    ///
+    /// Uses the default LiveCommandRunner for production use.
     pub fn open() -> Result<Self> {
         let repo = Repository::discover(".").map_err(|_| ChabaError::NotInGitRepo)?;
-        Ok(GitOps { repo })
+        Ok(GitOps {
+            repo,
+            runner: Arc::new(LiveCommandRunner),
+        })
+    }
+
+    /// Open repository from a specific path
+    ///
+    /// This is useful for testing where you want to specify the exact repository location.
+    pub fn open_at(path: &Path) -> Result<Self> {
+        Self::new(path, Arc::new(LiveCommandRunner))
     }
 
     /// Get repository root path
@@ -27,10 +55,17 @@ impl GitOps {
     pub async fn fetch_branch(&self, remote: &str, branch: &str) -> Result<()> {
         let repo_path = self.repo_root();
 
-        let output = Command::new("git")
-            .current_dir(&repo_path)
-            .args(["fetch", remote, branch])
-            .output()
+        let output = self
+            .runner
+            .run(
+                "git",
+                &[
+                    "fetch".as_ref(),
+                    remote.as_ref(),
+                    branch.as_ref(),
+                ],
+                &repo_path,
+            )
             .await?;
 
         if !output.status.success() {
@@ -54,10 +89,18 @@ impl GitOps {
                 format!("Invalid path (non-UTF8): {}", path.display())
             ))?;
 
-        let output = Command::new("git")
-            .current_dir(&repo_path)
-            .args(["worktree", "add", path_str, branch])
-            .output()
+        let output = self
+            .runner
+            .run(
+                "git",
+                &[
+                    "worktree".as_ref(),
+                    "add".as_ref(),
+                    OsStr::new(path_str),
+                    branch.as_ref(),
+                ],
+                &repo_path,
+            )
             .await?;
 
         if !output.status.success() {
@@ -81,10 +124,18 @@ impl GitOps {
                 format!("Invalid path (non-UTF8): {}", path.display())
             ))?;
 
-        let output = Command::new("git")
-            .current_dir(&repo_path)
-            .args(["worktree", "remove", path_str, "--force"])
-            .output()
+        let output = self
+            .runner
+            .run(
+                "git",
+                &[
+                    "worktree".as_ref(),
+                    "remove".as_ref(),
+                    OsStr::new(path_str),
+                    "--force".as_ref(),
+                ],
+                &repo_path,
+            )
             .await?;
 
         if !output.status.success() {
@@ -104,10 +155,17 @@ impl GitOps {
     pub async fn list_worktrees(&self) -> Result<Vec<PathBuf>> {
         let repo_path = self.repo_root();
 
-        let output = Command::new("git")
-            .current_dir(&repo_path)
-            .args(["worktree", "list", "--porcelain"])
-            .output()
+        let output = self
+            .runner
+            .run(
+                "git",
+                &[
+                    "worktree".as_ref(),
+                    "list".as_ref(),
+                    "--porcelain".as_ref(),
+                ],
+                &repo_path,
+            )
             .await?;
 
         if !output.status.success() {
@@ -133,16 +191,21 @@ impl GitOps {
 }
 
 /// Get PR information using GitHub CLI
+///
+/// TODO: Refactor to use CommandRunner trait for better testability
 pub async fn get_pr_branch(pr_number: u32) -> Result<String> {
     // Check if gh is installed
-    let gh_check = Command::new("which").arg("gh").output().await?;
+    let gh_check = tokio::process::Command::new("which")
+        .arg("gh")
+        .output()
+        .await?;
 
     if !gh_check.status.success() {
         return Err(ChabaError::GhCliNotFound);
     }
 
     // Get PR branch name
-    let output = Command::new("gh")
+    let output = tokio::process::Command::new("gh")
         .args(["pr", "view", &pr_number.to_string(), "--json", "headRefName", "-q", ".headRefName"])
         .output()
         .await?;
@@ -162,4 +225,165 @@ pub async fn get_pr_branch(pr_number: u32) -> Result<String> {
     }
 
     Ok(branch)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use std::os::unix::process::ExitStatusExt; // For ExitStatus::from_raw
+    use std::process::{ExitStatus, Output};
+    use std::sync::Mutex;
+
+    // Simple mock implementation for testing
+    struct TestCommandRunner {
+        calls: Mutex<Vec<Vec<String>>>,
+        return_output: Output,
+    }
+
+    impl TestCommandRunner {
+        fn new(output: Output) -> Self {
+            Self {
+                calls: Mutex::new(Vec::new()),
+                return_output: output,
+            }
+        }
+
+        fn get_calls(&self) -> Vec<Vec<String>> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl CommandRunner for TestCommandRunner {
+        async fn run(
+            &self,
+            _program: &str,
+            args: &[&OsStr],
+            _current_dir: &Path,
+        ) -> std::result::Result<Output, std::io::Error> {
+            let mut calls = self.calls.lock().unwrap();
+            calls.push(
+                args.iter()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .collect(),
+            );
+            Ok(self.return_output.clone())
+        }
+    }
+
+    // Helper to create a successful output
+    fn success_output(stdout: &str) -> Output {
+        Output {
+            status: ExitStatus::from_raw(0),
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: vec![],
+        }
+    }
+
+    // Helper to create a failed output
+    fn error_output(stderr: &str) -> Output {
+        Output {
+            status: ExitStatus::from_raw(1),
+            stdout: vec![],
+            stderr: stderr.as_bytes().to_vec(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_branch_builds_correct_command() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(temp_dir.path()).unwrap();
+        std::mem::drop(repo); // Close repo to avoid lock issues
+
+        let mock_runner = Arc::new(TestCommandRunner::new(success_output("")));
+
+        let git_ops = GitOps::new(temp_dir.path(), mock_runner.clone()).unwrap();
+        git_ops.fetch_branch("origin", "main").await.unwrap();
+
+        let calls = mock_runner.get_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0], vec!["fetch", "origin", "main"]);
+    }
+
+    #[tokio::test]
+    async fn test_add_worktree_builds_correct_command() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(temp_dir.path()).unwrap();
+        std::mem::drop(repo);
+
+        let mock_runner = Arc::new(TestCommandRunner::new(success_output("")));
+
+        let git_ops = GitOps::new(temp_dir.path(), mock_runner.clone()).unwrap();
+        git_ops
+            .add_worktree(&temp_dir.path().join("test-wt"), "feature")
+            .await
+            .unwrap();
+
+        let calls = mock_runner.get_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0][0], "worktree");
+        assert_eq!(calls[0][1], "add");
+        assert!(calls[0][2].contains("test-wt"));
+        assert_eq!(calls[0][3], "feature");
+    }
+
+    #[tokio::test]
+    async fn test_remove_worktree_builds_correct_command() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(temp_dir.path()).unwrap();
+        std::mem::drop(repo);
+
+        let mock_runner = Arc::new(TestCommandRunner::new(success_output("")));
+
+        let git_ops = GitOps::new(temp_dir.path(), mock_runner.clone()).unwrap();
+        git_ops
+            .remove_worktree(&temp_dir.path().join("test-wt"))
+            .await
+            .unwrap();
+
+        let calls = mock_runner.get_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0][0], "worktree");
+        assert_eq!(calls[0][1], "remove");
+        assert!(calls[0][2].contains("test-wt"));
+        assert_eq!(calls[0][3], "--force");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_branch_error_handling() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(temp_dir.path()).unwrap();
+        std::mem::drop(repo);
+
+        let mock_runner = Arc::new(TestCommandRunner::new(error_output("fatal: remote not found")));
+
+        let git_ops = GitOps::new(temp_dir.path(), mock_runner).unwrap();
+        let result = git_ops.fetch_branch("origin", "main").await;
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Git operation failed"));
+    }
+
+    #[tokio::test]
+    async fn test_list_worktrees_parsing() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(temp_dir.path()).unwrap();
+        std::mem::drop(repo);
+
+        let porcelain_output = format!(
+            "worktree {}\nHEAD abc123\nbranch refs/heads/main\n\nworktree {}/wt1\nHEAD def456\nbranch refs/heads/feature\n",
+            temp_dir.path().display(),
+            temp_dir.path().display()
+        );
+
+        let mock_runner = Arc::new(TestCommandRunner::new(success_output(&porcelain_output)));
+
+        let git_ops = GitOps::new(temp_dir.path(), mock_runner).unwrap();
+        let worktrees = git_ops.list_worktrees().await.unwrap();
+
+        assert_eq!(worktrees.len(), 2);
+        assert!(worktrees[0].ends_with(temp_dir.path().file_name().unwrap()));
+        assert!(worktrees[1].to_string_lossy().contains("wt1"));
+    }
 }
