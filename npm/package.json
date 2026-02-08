@@ -1,0 +1,47 @@
+{
+  "name": "@nenene01/chaba",
+  "version": "0.1.0",
+  "description": "AI Agent Friendly Source Review & Debug Environment - Integrates git worktree with AI agents for seamless team collaboration",
+  "keywords": [
+    "git",
+    "worktree",
+    "code-review",
+    "ai-agent",
+    "cli",
+    "sandbox",
+    "claude",
+    "codex",
+    "gemini"
+  ],
+  "homepage": "https://github.com/Nenene01/chaba#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Nenene01/chaba.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Nenene01/chaba/issues"
+  },
+  "license": "MIT",
+  "author": "Kei Sekine <204158401+Nenene01@users.noreply.github.com>",
+  "bin": {
+    "chaba": "./bin/chaba.js"
+  },
+  "files": [
+    "bin",
+    "scripts"
+  ],
+  "scripts": {
+    "postinstall": "node scripts/install.js",
+    "test": "node bin/chaba.js --version"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "optionalDependencies": {
+    "@nenene01/chaba-darwin-x64": "0.1.0",
+    "@nenene01/chaba-darwin-arm64": "0.1.0",
+    "@nenene01/chaba-linux-x64": "0.1.0",
+    "@nenene01/chaba-linux-arm64": "0.1.0",
+    "@nenene01/chaba-win32-x64": "0.1.0"
+  }
+}

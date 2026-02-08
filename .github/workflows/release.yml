@@ -1,0 +1,154 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform.name }}
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            name: chaba-darwin-x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            name: chaba-darwin-arm64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            name: chaba-linux-x64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            name: chaba-linux-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: chaba-win32-x64
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.platform.target }}
+          override: true
+          profile: minimal
+
+      - name: Install cross-compilation tools (Linux ARM64)
+        if: matrix.platform.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: ${{ matrix.platform.target == 'aarch64-unknown-linux-gnu' }}
+          command: build
+          args: --release --target ${{ matrix.platform.target }}
+
+      - name: Package binary
+        shell: bash
+        run: |
+          cd target/${{ matrix.platform.target }}/release
+          if [[ "${{ matrix.platform.os }}" == "windows-latest" ]]; then
+            7z a ../../../${{ matrix.platform.name }}.zip chaba.exe
+          else
+            tar czf ../../../${{ matrix.platform.name }}.tar.gz chaba
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.platform.name }}
+          path: ${{ matrix.platform.name }}.*
+
+  create-release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/*/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-npm:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+
+      - name: Prepare platform packages
+        run: |
+          cd npm/packages
+          for pkg in chaba-*; do
+            echo "Preparing $pkg..."
+            cd $pkg
+
+            # Extract binary from artifact
+            platform_name=$(basename $pkg)
+            if [[ -f ../../../artifacts/$platform_name/*.tar.gz ]]; then
+              tar xzf ../../../artifacts/$platform_name/*.tar.gz
+            elif [[ -f ../../../artifacts/$platform_name/*.zip ]]; then
+              unzip ../../../artifacts/$platform_name/*.zip
+            fi
+
+            # Make executable (Unix)
+            if [[ -f chaba ]]; then
+              chmod +x chaba
+            fi
+
+            cd ..
+          done
+
+      - name: Publish platform packages
+        run: |
+          cd npm/packages
+          for pkg in chaba-*; do
+            echo "Publishing $pkg..."
+            cd $pkg
+            npm publish --access public || echo "Package $pkg already published"
+            cd ..
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish main package
+        run: |
+          cd npm
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

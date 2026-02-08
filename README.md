@@ -156,7 +156,13 @@ Now you have:
 
 - [ ] **Phase 4**: MCP integration (Playwright, API debugging)
 - [ ] **Phase 5**: Build automation & simulator launching
-- [ ] **Phase 6**: npm distribution
+- [x] **Phase 6**: npm distribution ✅
+  - [x] npm package structure
+  - [x] CLI wrapper (bin/chaba.js)
+  - [x] Platform packages
+  - [x] GitHub Actions CI/CD
+  - [x] Release automation
+  - [ ] First npm publish (pending)
 
 ### Technology Stack
 
@@ -170,8 +176,17 @@ Now you have:
 
 ### Installation
 
-#### From Source (Current)
+#### Via npm (Coming Soon)
+```bash
+npm install -g @nenene01/chaba
+```
 
+Supported platforms:
+- macOS (Intel & Apple Silicon)
+- Linux (x64 & ARM64)
+- Windows (x64)
+
+#### From Source
 ```bash
 # Clone the repository
 git clone https://github.com/Nenene01/chaba.git
@@ -192,11 +207,6 @@ cargo install chaba
 #### Via Homebrew (Planned)
 ```bash
 brew install chaba
-```
-
-#### Via npm (Planned)
-```bash
-npm install -g chaba
 ```
 
 ### Quick Start
@@ -365,7 +375,13 @@ chaba review --pr 234
 
 - [ ] **Phase 4**: MCP統合（Playwright、APIデバッグ）
 - [ ] **Phase 5**: ビルド自動化 & シミュレータ起動
-- [ ] **Phase 6**: npm配布
+- [x] **Phase 6**: npm配布 ✅
+  - [x] npmパッケージ構造
+  - [x] CLIラッパー (bin/chaba.js)
+  - [x] プラットフォームパッケージ
+  - [x] GitHub Actions CI/CD
+  - [x] リリース自動化
+  - [ ] 初回npm公開（保留中）
 
 ### 技術スタック
 
@@ -379,8 +395,17 @@ chaba review --pr 234
 
 ### インストール
 
-#### ソースから（現在）
+#### npm経由（近日公開）
+```bash
+npm install -g @nenene01/chaba
+```
 
+対応プラットフォーム:
+- macOS (Intel & Apple Silicon)
+- Linux (x64 & ARM64)
+- Windows (x64)
+
+#### ソースから
 ```bash
 # リポジトリをクローン
 git clone https://github.com/Nenene01/chaba.git
@@ -401,11 +426,6 @@ cargo install chaba
 #### Homebrew経由（予定）
 ```bash
 brew install chaba
-```
-
-#### npm経由（予定）
-```bash
-npm install -g chaba
 ```
 
 ### クイックスタート
