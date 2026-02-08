@@ -35,6 +35,11 @@ pub struct ReviewState {
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct State {
+    /// State version for optimistic locking
+    /// Incremented on every save to detect concurrent modifications
+    #[serde(default)]
+    pub version: u64,
+
     pub reviews: Vec<ReviewState>,
 }
 
@@ -58,14 +63,35 @@ impl State {
         Ok(state)
     }
 
-    /// Save state to file with atomic write
-    pub fn save(&self) -> Result<()> {
+    /// Save state to file with atomic write and optimistic locking
+    pub fn save(&mut self) -> Result<()> {
         let state_path = Self::state_file_path()?;
 
         // Ensure directory exists
         if let Some(parent) = state_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
+
+        // Optimistic locking: Check if file was modified by another process
+        if state_path.exists() {
+            // Read current version from file
+            let file = File::open(&state_path)?;
+            file.lock_shared()?;
+
+            let content = std::fs::read_to_string(&state_path)?;
+            if let Ok(current_state) = serde_yaml::from_str::<State>(&content) {
+                if current_state.version != self.version {
+                    return Err(crate::error::ChabaError::StateConflict {
+                        expected: self.version,
+                        actual: current_state.version,
+                    });
+                }
+            }
+            // Lock is released when file is dropped
+        }
+
+        // Increment version before saving
+        self.version += 1;
 
         let content = serde_yaml::to_string(&self)?;
 
@@ -286,6 +312,7 @@ mod tests {
         };
 
         let state = State {
+            version: 0,
             reviews: vec![review],
         };
 
@@ -357,6 +384,7 @@ reviews:
         };
 
         let state = State {
+            version: 0,
             reviews: vec![review],
         };
 
@@ -388,11 +416,113 @@ reviews:
         };
 
         let state = State {
+            version: 0,
             reviews: vec![review],
         };
 
         let yaml = serde_yaml::to_string(&state).unwrap();
         // Should contain agent_analyses when not empty
         assert!(yaml.contains("agent_analyses"));
+    }
+
+    #[test]
+    fn test_version_increments_on_save() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        std::env::set_var("HOME", temp_dir.path());
+
+        let mut state = State::default();
+        assert_eq!(state.version, 0);
+
+        // First save
+        state.save().unwrap();
+        assert_eq!(state.version, 1);
+
+        // Second save
+        state.save().unwrap();
+        assert_eq!(state.version, 2);
+
+        // Load and verify version
+        let loaded = State::load().unwrap();
+        assert_eq!(loaded.version, 2);
+    }
+
+    #[test]
+    fn test_concurrent_modification_detection() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        std::env::set_var("HOME", temp_dir.path());
+
+        // Ensure .chaba directory exists
+        let chaba_dir = temp_dir.path().join(".chaba");
+        std::fs::create_dir_all(&chaba_dir).unwrap();
+
+        // Create initial state
+        let mut state1 = State::default();
+        state1.save().unwrap();
+        assert_eq!(state1.version, 1);
+
+        // Simulate two processes loading the same state
+        let mut state2 = State::load().unwrap();
+        let mut state3 = State::load().unwrap();
+        assert_eq!(state2.version, 1);
+        assert_eq!(state3.version, 1);
+
+        // Process 2 modifies and saves
+        state2.reviews.push(ReviewState {
+            pr_number: 123,
+            branch: "feature/test".to_string(),
+            worktree_path: PathBuf::from("/tmp/test"),
+            created_at: Utc::now(),
+            port: Some(3000),
+            project_type: None,
+            deps_installed: false,
+            env_copied: false,
+            agent_analyses: Vec::new(),
+        });
+        state2.save().unwrap();
+        assert_eq!(state2.version, 2);
+
+        // Process 3 tries to save - should fail due to conflict
+        state3.reviews.push(ReviewState {
+            pr_number: 456,
+            branch: "feature/other".to_string(),
+            worktree_path: PathBuf::from("/tmp/other"),
+            created_at: Utc::now(),
+            port: Some(3001),
+            project_type: None,
+            deps_installed: false,
+            env_copied: false,
+            agent_analyses: Vec::new(),
+        });
+
+        let result = state3.save();
+        assert!(result.is_err());
+
+        match result {
+            Err(crate::error::ChabaError::StateConflict { expected, actual }) => {
+                assert_eq!(expected, 1);
+                assert_eq!(actual, 2);
+            }
+            _ => panic!("Expected StateConflict error"),
+        }
+    }
+
+    #[test]
+    fn test_version_backward_compatibility() {
+        // Old format without version field
+        let yaml = r#"
+reviews:
+  - pr_number: 123
+    branch: feature/test
+    worktree_path: /tmp/test
+    created_at: 2024-01-01T00:00:00Z
+"#;
+
+        let state: State = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(state.version, 0); // Default value
+        assert_eq!(state.reviews.len(), 1);
     }
 }

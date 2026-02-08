@@ -99,6 +99,9 @@ pub enum ChabaError {
         stderr: String,
     },
 
+    #[error("State file was modified by another process. Expected version {expected}, but found {actual}. Please reload and try again.")]
+    StateConflict { expected: u64, actual: u64 },
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
