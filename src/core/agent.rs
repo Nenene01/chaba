@@ -3,6 +3,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use indicatif::{ProgressBar, ProgressStyle};
+
 use crate::config::AgentsConfig;
 use crate::core::command::{CommandRunner, LiveCommandRunner};
 use crate::core::review_analysis::{ReviewAnalysis, Finding, Severity, Category};
@@ -60,6 +62,16 @@ impl AgentManager {
         pr_number: u32,
         worktree_path: &Path,
     ) -> Result<Vec<ReviewAnalysis>> {
+        // Create progress bar
+        let pb = ProgressBar::new(agents.len() as u64);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
+                .unwrap()
+                .progress_chars("#>-")
+        );
+        pb.set_message("Running AI agents");
+
         let mut tasks = Vec::new();
 
         for agent in agents {
@@ -82,22 +94,27 @@ impl AgentManager {
             let agent_name = &agents[idx];
             match result {
                 Ok(Ok(analysis)) => {
+                    pb.set_message(format!("✓ {} completed", agent_name));
                     tracing::info!("✓ {} completed analysis", agent_name);
                     analyses.push(analysis);
                 }
                 Ok(Err(e)) => {
+                    pb.set_message(format!("✗ {} failed", agent_name));
                     tracing::warn!("✗ {} failed: {}", agent_name, e);
                     errors.push((agent_name.clone(), e.to_string()));
                 }
                 Err(e) => {
+                    pb.set_message(format!("✗ {} task failed", agent_name));
                     tracing::warn!("✗ {} task failed: {}", agent_name, e);
                     errors.push((agent_name.clone(), e.to_string()));
                 }
             }
+            pb.inc(1);
         }
 
         if !errors.is_empty() && analyses.is_empty() {
             // All agents failed
+            pb.finish_with_message("⚠️  All agents failed");
             tracing::error!("⚠️  All agents failed to complete analysis");
             tracing::error!("Review the errors above and check:");
             tracing::error!("  - Agent CLI tools are installed (claude, codex, gemini)");
@@ -105,7 +122,11 @@ impl AgentManager {
             tracing::error!("  - Agent timeout setting (current: {}s)", self.config.timeout);
         } else if !errors.is_empty() {
             // Some agents failed
+            pb.finish_with_message(format!("{} agents completed, {} failed", analyses.len(), errors.len()));
             tracing::warn!("⚠️  {} agent(s) failed, {} succeeded", errors.len(), analyses.len());
+        } else {
+            // All succeeded
+            pb.finish_with_message("✓ All agents completed successfully");
         }
 
         Ok(analyses)
@@ -118,28 +139,45 @@ impl AgentManager {
         pr_number: u32,
         worktree_path: &Path,
     ) -> Result<Vec<ReviewAnalysis>> {
+        // Create progress bar
+        let pb = ProgressBar::new(agents.len() as u64);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
+                .unwrap()
+                .progress_chars("#>-")
+        );
+
         let mut analyses = Vec::new();
         let mut errors = Vec::new();
 
         for agent in agents {
+            pb.set_message(format!("Running {} analysis...", agent));
             tracing::info!("Running {} analysis...", agent);
             match Self::run_single_agent(agent, pr_number, worktree_path, self.config.timeout, self.runner.clone()).await {
                 Ok(analysis) => {
+                    pb.set_message(format!("✓ {} completed", agent));
                     tracing::info!("✓ {} completed", agent);
                     analyses.push(analysis);
                 }
                 Err(e) => {
+                    pb.set_message(format!("✗ {} failed", agent));
                     tracing::warn!("✗ {} failed: {}", agent, e);
                     errors.push((agent.clone(), e.to_string()));
                 }
             }
+            pb.inc(1);
         }
 
         if !errors.is_empty() && analyses.is_empty() {
+            pb.finish_with_message("⚠️  All agents failed");
             tracing::error!("⚠️  All agents failed to complete analysis");
             tracing::error!("Check agent CLI tool installations and network connectivity");
         } else if !errors.is_empty() {
+            pb.finish_with_message(format!("{} agents completed, {} failed", analyses.len(), errors.len()));
             tracing::warn!("⚠️  {} agent(s) failed, {} succeeded", errors.len(), analyses.len());
+        } else {
+            pb.finish_with_message("✓ All agents completed successfully");
         }
 
         Ok(analyses)
