@@ -98,6 +98,7 @@ impl WorktreeManager {
             project_type: sandbox_info.project_type,
             deps_installed: sandbox_info.deps_installed,
             env_copied: sandbox_info.env_copied,
+            agent_analyses: Vec::new(),
         };
 
         // Save state

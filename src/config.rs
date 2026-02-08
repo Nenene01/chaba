@@ -10,6 +10,9 @@ pub struct Config {
 
     #[serde(default)]
     pub sandbox: SandboxConfig,
+
+    #[serde(default)]
+    pub agents: AgentsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,11 +151,71 @@ impl Default for PortConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentsConfig {
+    /// Enable AI agent integration
+    #[serde(default = "default_agents_enabled")]
+    pub enabled: bool,
+
+    /// Default agents for --with-agent
+    #[serde(default = "default_default_agents")]
+    pub default_agents: Vec<String>,
+
+    /// Agents for --thorough review
+    #[serde(default = "default_thorough_agents")]
+    pub thorough_agents: Vec<String>,
+
+    /// Timeout in seconds
+    #[serde(default = "default_agent_timeout")]
+    pub timeout: u64,
+
+    /// Enable parallel execution
+    #[serde(default = "default_parallel")]
+    pub parallel: bool,
+}
+
+fn default_agents_enabled() -> bool {
+    true
+}
+
+fn default_default_agents() -> Vec<String> {
+    vec!["claude".to_string()]
+}
+
+fn default_thorough_agents() -> Vec<String> {
+    vec![
+        "claude".to_string(),
+        "codex".to_string(),
+        "gemini".to_string(),
+    ]
+}
+
+fn default_agent_timeout() -> u64 {
+    600
+}
+
+fn default_parallel() -> bool {
+    true
+}
+
+impl Default for AgentsConfig {
+    fn default() -> Self {
+        AgentsConfig {
+            enabled: default_agents_enabled(),
+            default_agents: default_default_agents(),
+            thorough_agents: default_thorough_agents(),
+            timeout: default_agent_timeout(),
+            parallel: default_parallel(),
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Config {
             worktree: WorktreeConfig::default(),
             sandbox: SandboxConfig::default(),
+            agents: AgentsConfig::default(),
         }
     }
 }

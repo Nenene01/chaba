@@ -42,6 +42,14 @@ enum Commands {
         /// Custom worktree path
         #[arg(long)]
         worktree: Option<String>,
+
+        /// Run AI agent analysis (uses default agents from config)
+        #[arg(long)]
+        with_agent: bool,
+
+        /// Run thorough AI agent analysis (uses all configured agents)
+        #[arg(long)]
+        thorough: bool,
     },
 
     /// Clean up a review environment
@@ -67,6 +75,13 @@ enum Commands {
         #[arg(short, long)]
         local: bool,
     },
+
+    /// View AI agent analysis results
+    AgentResult {
+        /// Pull request number
+        #[arg(short, long)]
+        pr: u32,
+    },
 }
 
 #[tokio::main]
@@ -86,11 +101,14 @@ async fn main() {
             branch,
             force,
             worktree,
-        } => commands::review::execute(pr, branch, force, worktree).await,
+            with_agent,
+            thorough,
+        } => commands::review::execute(pr, branch, force, worktree, with_agent, thorough).await,
         Commands::Cleanup { pr } => commands::cleanup::execute(pr).await,
         Commands::List => commands::list::execute().await,
         Commands::Status { pr } => commands::status::execute(pr).await,
         Commands::Config { local } => commands::config::execute(local).await,
+        Commands::AgentResult { pr } => commands::agent_result::execute(pr).await,
     };
 
     if let Err(e) = result {

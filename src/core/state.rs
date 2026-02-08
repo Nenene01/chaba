@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::core::review_analysis::ReviewAnalysis;
 use crate::error::Result;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,6 +24,10 @@ pub struct ReviewState {
 
     #[serde(default)]
     pub env_copied: bool,
+
+    // Phase 3: AI Agent analysis results
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub agent_analyses: Vec<ReviewAnalysis>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
