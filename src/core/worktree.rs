@@ -107,7 +107,7 @@ impl WorktreeManager {
         // Determine branch name
         let (pr, branch_name) = match (pr_number, branch) {
             (Some(pr), None) => {
-                let branch = super::git::get_pr_branch(pr).await?;
+                let branch = self.git.get_pr_branch(pr).await?;
                 (pr, branch)
             }
             (None, Some(branch)) => {

@@ -82,15 +82,15 @@ impl AgentManager {
             let agent_name = &agents[idx];
             match result {
                 Ok(Ok(analysis)) => {
-                    eprintln!("✓ {} completed analysis", agent_name);
+                    tracing::info!("✓ {} completed analysis", agent_name);
                     analyses.push(analysis);
                 }
                 Ok(Err(e)) => {
-                    eprintln!("✗ {} failed: {}", agent_name, e);
+                    tracing::warn!("✗ {} failed: {}", agent_name, e);
                     errors.push((agent_name.clone(), e.to_string()));
                 }
                 Err(e) => {
-                    eprintln!("✗ {} task failed: {}", agent_name, e);
+                    tracing::warn!("✗ {} task failed: {}", agent_name, e);
                     errors.push((agent_name.clone(), e.to_string()));
                 }
             }
@@ -98,14 +98,14 @@ impl AgentManager {
 
         if !errors.is_empty() && analyses.is_empty() {
             // All agents failed
-            eprintln!("\n⚠️  All agents failed to complete analysis");
-            eprintln!("Review the errors above and check:");
-            eprintln!("  - Agent CLI tools are installed (claude, codex, gemini)");
-            eprintln!("  - Network connectivity");
-            eprintln!("  - Agent timeout setting (current: {}s)", self.config.timeout);
+            tracing::error!("⚠️  All agents failed to complete analysis");
+            tracing::error!("Review the errors above and check:");
+            tracing::error!("  - Agent CLI tools are installed (claude, codex, gemini)");
+            tracing::error!("  - Network connectivity");
+            tracing::error!("  - Agent timeout setting (current: {}s)", self.config.timeout);
         } else if !errors.is_empty() {
             // Some agents failed
-            eprintln!("\n⚠️  {} agent(s) failed, {} succeeded", errors.len(), analyses.len());
+            tracing::warn!("⚠️  {} agent(s) failed, {} succeeded", errors.len(), analyses.len());
         }
 
         Ok(analyses)
@@ -122,24 +122,24 @@ impl AgentManager {
         let mut errors = Vec::new();
 
         for agent in agents {
-            eprintln!("Running {} analysis...", agent);
+            tracing::info!("Running {} analysis...", agent);
             match Self::run_single_agent(agent, pr_number, worktree_path, self.config.timeout, self.runner.clone()).await {
                 Ok(analysis) => {
-                    eprintln!("✓ {} completed", agent);
+                    tracing::info!("✓ {} completed", agent);
                     analyses.push(analysis);
                 }
                 Err(e) => {
-                    eprintln!("✗ {} failed: {}", agent, e);
+                    tracing::warn!("✗ {} failed: {}", agent, e);
                     errors.push((agent.clone(), e.to_string()));
                 }
             }
         }
 
         if !errors.is_empty() && analyses.is_empty() {
-            eprintln!("\n⚠️  All agents failed to complete analysis");
-            eprintln!("Check agent CLI tool installations and network connectivity");
+            tracing::error!("⚠️  All agents failed to complete analysis");
+            tracing::error!("Check agent CLI tool installations and network connectivity");
         } else if !errors.is_empty() {
-            eprintln!("\n⚠️  {} agent(s) failed, {} succeeded", errors.len(), analyses.len());
+            tracing::warn!("⚠️  {} agent(s) failed, {} succeeded", errors.len(), analyses.len());
         }
 
         Ok(analyses)

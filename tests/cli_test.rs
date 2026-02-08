@@ -1,9 +1,9 @@
-use assert_cmd::Command;
+use assert_cmd::cargo;
 use predicates::prelude::*;
 
 #[test]
 fn test_cli_help() {
-    let mut cmd = Command::cargo_bin("chaba").unwrap();
+    let mut cmd = cargo::cargo_bin_cmd!("chaba");
 
     cmd.arg("--help");
 
@@ -21,7 +21,7 @@ fn test_cli_help() {
 
 #[test]
 fn test_cli_version() {
-    let mut cmd = Command::cargo_bin("chaba").unwrap();
+    let mut cmd = cargo::cargo_bin_cmd!("chaba");
 
     cmd.arg("--version");
 
@@ -32,7 +32,7 @@ fn test_cli_version() {
 
 #[test]
 fn test_review_command_help() {
-    let mut cmd = Command::cargo_bin("chaba").unwrap();
+    let mut cmd = cargo::cargo_bin_cmd!("chaba");
 
     cmd.arg("review").arg("--help");
 
@@ -49,7 +49,7 @@ fn test_review_command_help() {
 
 #[test]
 fn test_cleanup_command_help() {
-    let mut cmd = Command::cargo_bin("chaba").unwrap();
+    let mut cmd = cargo::cargo_bin_cmd!("chaba");
 
     cmd.arg("cleanup").arg("--help");
 
@@ -61,7 +61,7 @@ fn test_cleanup_command_help() {
 
 #[test]
 fn test_list_command_help() {
-    let mut cmd = Command::cargo_bin("chaba").unwrap();
+    let mut cmd = cargo::cargo_bin_cmd!("chaba");
 
     cmd.arg("list").arg("--help");
 
@@ -72,7 +72,7 @@ fn test_list_command_help() {
 
 #[test]
 fn test_status_command_help() {
-    let mut cmd = Command::cargo_bin("chaba").unwrap();
+    let mut cmd = cargo::cargo_bin_cmd!("chaba");
 
     cmd.arg("status").arg("--help");
 
@@ -84,7 +84,7 @@ fn test_status_command_help() {
 
 #[test]
 fn test_config_command_help() {
-    let mut cmd = Command::cargo_bin("chaba").unwrap();
+    let mut cmd = cargo::cargo_bin_cmd!("chaba");
 
     cmd.arg("config").arg("--help");
 
@@ -96,7 +96,7 @@ fn test_config_command_help() {
 
 #[test]
 fn test_agent_result_command_help() {
-    let mut cmd = Command::cargo_bin("chaba").unwrap();
+    let mut cmd = cargo::cargo_bin_cmd!("chaba");
 
     cmd.arg("agent-result").arg("--help");
 
@@ -108,7 +108,7 @@ fn test_agent_result_command_help() {
 
 #[test]
 fn test_review_command_missing_args() {
-    let mut cmd = Command::cargo_bin("chaba").unwrap();
+    let mut cmd = cargo::cargo_bin_cmd!("chaba");
 
     cmd.arg("review");
 
@@ -119,7 +119,7 @@ fn test_review_command_missing_args() {
 
 #[test]
 fn test_cleanup_command_missing_pr() {
-    let mut cmd = Command::cargo_bin("chaba").unwrap();
+    let mut cmd = cargo::cargo_bin_cmd!("chaba");
 
     cmd.arg("cleanup");
 
@@ -130,7 +130,7 @@ fn test_cleanup_command_missing_pr() {
 
 #[test]
 fn test_status_command_missing_pr() {
-    let mut cmd = Command::cargo_bin("chaba").unwrap();
+    let mut cmd = cargo::cargo_bin_cmd!("chaba");
 
     cmd.arg("status");
 
@@ -141,7 +141,7 @@ fn test_status_command_missing_pr() {
 
 #[test]
 fn test_agent_result_command_missing_pr() {
-    let mut cmd = Command::cargo_bin("chaba").unwrap();
+    let mut cmd = cargo::cargo_bin_cmd!("chaba");
 
     cmd.arg("agent-result");
 
@@ -152,7 +152,7 @@ fn test_agent_result_command_missing_pr() {
 
 #[test]
 fn test_review_pr_and_branch_conflict() {
-    let mut cmd = Command::cargo_bin("chaba").unwrap();
+    let mut cmd = cargo::cargo_bin_cmd!("chaba");
 
     cmd.arg("review")
         .arg("--pr")
@@ -167,7 +167,7 @@ fn test_review_pr_and_branch_conflict() {
 
 #[test]
 fn test_list_command_basic() {
-    let mut cmd = Command::cargo_bin("chaba").unwrap();
+    let mut cmd = cargo::cargo_bin_cmd!("chaba");
 
     cmd.arg("list");
 
@@ -181,7 +181,7 @@ fn test_config_command_local() {
 
     let temp_dir = TempDir::new().unwrap();
 
-    let mut cmd = Command::cargo_bin("chaba").unwrap();
+    let mut cmd = cargo::cargo_bin_cmd!("chaba");
     cmd.current_dir(temp_dir.path()).arg("config").arg("--local");
 
     cmd.assert()
@@ -194,7 +194,7 @@ fn test_config_command_local() {
 
 #[test]
 fn test_verbose_flag() {
-    let mut cmd = Command::cargo_bin("chaba").unwrap();
+    let mut cmd = cargo::cargo_bin_cmd!("chaba");
 
     cmd.arg("--verbose").arg("list");
 
@@ -203,7 +203,7 @@ fn test_verbose_flag() {
 
 #[test]
 fn test_invalid_command() {
-    let mut cmd = Command::cargo_bin("chaba").unwrap();
+    let mut cmd = cargo::cargo_bin_cmd!("chaba");
 
     cmd.arg("invalid-command");
 

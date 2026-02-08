@@ -149,6 +149,55 @@ impl GitOps {
         Ok(())
     }
 
+    /// Get PR branch name using GitHub CLI
+    pub async fn get_pr_branch(&self, pr_number: u32) -> Result<String> {
+        let repo_path = self.repo_root();
+
+        // Check if gh is installed
+        let gh_check = self
+            .runner
+            .run("which", &["gh".as_ref()], &repo_path)
+            .await?;
+
+        if !gh_check.status.success() {
+            return Err(ChabaError::GhCliNotFound);
+        }
+
+        // Get PR branch name
+        let output = self
+            .runner
+            .run(
+                "gh",
+                &[
+                    "pr".as_ref(),
+                    "view".as_ref(),
+                    pr_number.to_string().as_ref(),
+                    "--json".as_ref(),
+                    "headRefName".as_ref(),
+                    "-q".as_ref(),
+                    ".headRefName".as_ref(),
+                ],
+                &repo_path,
+            )
+            .await?;
+
+        if !output.status.success() {
+            let error = String::from_utf8_lossy(&output.stderr);
+            if error.contains("Could not resolve to a PullRequest") {
+                return Err(ChabaError::PrNotFound(pr_number));
+            }
+            return Err(ChabaError::GhCliError(error.to_string()));
+        }
+
+        let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+        if branch.is_empty() {
+            return Err(ChabaError::PrNotFound(pr_number));
+        }
+
+        Ok(branch)
+    }
+
     /// List all worktrees
     /// Reserved for Phase 3: AI Agent integration
     #[allow(dead_code)]
@@ -190,41 +239,13 @@ impl GitOps {
     }
 }
 
-/// Get PR information using GitHub CLI
+/// Deprecated: Use GitOps::get_pr_branch() instead
 ///
-/// TODO: Refactor to use CommandRunner trait for better testability
+/// This function is kept for backward compatibility but will be removed in a future version.
+#[deprecated(since = "0.1.0", note = "Use GitOps::get_pr_branch() instead")]
 pub async fn get_pr_branch(pr_number: u32) -> Result<String> {
-    // Check if gh is installed
-    let gh_check = tokio::process::Command::new("which")
-        .arg("gh")
-        .output()
-        .await?;
-
-    if !gh_check.status.success() {
-        return Err(ChabaError::GhCliNotFound);
-    }
-
-    // Get PR branch name
-    let output = tokio::process::Command::new("gh")
-        .args(["pr", "view", &pr_number.to_string(), "--json", "headRefName", "-q", ".headRefName"])
-        .output()
-        .await?;
-
-    if !output.status.success() {
-        let error = String::from_utf8_lossy(&output.stderr);
-        if error.contains("Could not resolve to a PullRequest") {
-            return Err(ChabaError::PrNotFound(pr_number));
-        }
-        return Err(ChabaError::GhCliError(error.to_string()));
-    }
-
-    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    if branch.is_empty() {
-        return Err(ChabaError::PrNotFound(pr_number));
-    }
-
-    Ok(branch)
+    let git_ops = GitOps::open()?;
+    git_ops.get_pr_branch(pr_number).await
 }
 
 #[cfg(test)]
@@ -239,6 +260,7 @@ mod tests {
     struct TestCommandRunner {
         calls: Mutex<Vec<Vec<String>>>,
         return_output: Output,
+        return_outputs: Option<Vec<Output>>,
     }
 
     impl TestCommandRunner {
@@ -246,6 +268,15 @@ mod tests {
             Self {
                 calls: Mutex::new(Vec::new()),
                 return_output: output,
+                return_outputs: None,
+            }
+        }
+
+        fn new_multi(outputs: Vec<Output>) -> Self {
+            Self {
+                calls: Mutex::new(Vec::new()),
+                return_output: outputs.first().unwrap().clone(),
+                return_outputs: Some(outputs),
             }
         }
 
@@ -268,6 +299,15 @@ mod tests {
                     .map(|s| s.to_string_lossy().into_owned())
                     .collect(),
             );
+
+            // If multiple outputs are provided, return based on call index
+            if let Some(ref outputs) = self.return_outputs {
+                let call_index = calls.len() - 1;
+                if call_index < outputs.len() {
+                    return Ok(outputs[call_index].clone());
+                }
+            }
+
             Ok(self.return_output.clone())
         }
     }
@@ -385,5 +425,73 @@ mod tests {
         assert_eq!(worktrees.len(), 2);
         assert!(worktrees[0].ends_with(temp_dir.path().file_name().unwrap()));
         assert!(worktrees[1].to_string_lossy().contains("wt1"));
+    }
+
+    #[tokio::test]
+    async fn test_get_pr_branch_success() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(temp_dir.path()).unwrap();
+        std::mem::drop(repo);
+
+        // Mock: both calls succeed
+        let mock_runner = Arc::new(TestCommandRunner::new_multi(vec![
+            success_output(""), // which gh succeeds
+            success_output("feature/test-branch\n"), // gh pr view succeeds
+        ]));
+
+        let git_ops = GitOps::new(temp_dir.path(), mock_runner.clone()).unwrap();
+        let branch = git_ops.get_pr_branch(123).await.unwrap();
+
+        assert_eq!(branch, "feature/test-branch");
+
+        // Verify commands were called correctly
+        let calls = mock_runner.get_calls();
+        assert_eq!(calls.len(), 2); // which gh, gh pr view
+
+        // Check gh pr view command
+        assert_eq!(calls[1][0], "pr");
+        assert_eq!(calls[1][1], "view");
+        assert_eq!(calls[1][2], "123");
+    }
+
+    #[tokio::test]
+    async fn test_get_pr_branch_not_found() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(temp_dir.path()).unwrap();
+        std::mem::drop(repo);
+
+        // Mock: first call (which gh) succeeds, second call (gh pr view) fails
+        let mock_runner = Arc::new(TestCommandRunner::new_multi(vec![
+            success_output(""), // which gh succeeds
+            error_output("Could not resolve to a PullRequest with the number of 999"),
+        ]));
+
+        let git_ops = GitOps::new(temp_dir.path(), mock_runner).unwrap();
+        let result = git_ops.get_pr_branch(999).await;
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ChabaError::PrNotFound(pr) => assert_eq!(pr, 999),
+            e => panic!("Expected PrNotFound, got: {:?}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_pr_branch_gh_not_installed() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(temp_dir.path()).unwrap();
+        std::mem::drop(repo);
+
+        // Mock 'which gh' failure
+        let mock_runner = Arc::new(TestCommandRunner::new(error_output("gh: command not found")));
+
+        let git_ops = GitOps::new(temp_dir.path(), mock_runner).unwrap();
+        let result = git_ops.get_pr_branch(123).await;
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ChabaError::GhCliNotFound => (),
+            e => panic!("Expected GhCliNotFound, got: {:?}", e),
+        }
     }
 }

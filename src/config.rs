@@ -243,6 +243,40 @@ impl Default for PortConfig {
     }
 }
 
+impl PortConfig {
+    /// Validate port range configuration
+    pub fn validate(&self) -> Result<()> {
+        // Check if range_start < range_end
+        if self.range_start >= self.range_end {
+            return Err(crate::error::ChabaError::ConfigError(
+                format!("Invalid port range: range_start ({}) must be less than range_end ({})",
+                    self.range_start, self.range_end)
+            ));
+        }
+
+        // Check if range_start is not in well-known port range (0-1023)
+        if self.range_start < 1024 {
+            return Err(crate::error::ChabaError::ConfigError(
+                format!("Invalid port range: range_start ({}) should be >= 1024 (avoid well-known ports)",
+                    self.range_start)
+            ));
+        }
+
+        // Note: range_end is u16, so it's automatically <= 65535 (no check needed)
+
+        // Check if range has at least some ports available (minimum 10 for safety)
+        let range_size = self.range_end - self.range_start;
+        if range_size < 10 {
+            return Err(crate::error::ChabaError::ConfigError(
+                format!("Invalid port range: range is too small ({} ports). Minimum 10 ports recommended.",
+                    range_size)
+            ));
+        }
+
+        Ok(())
+    }
+}
+
 /// Configuration for AI agent integration.
 ///
 /// Controls which AI agents are used for code review and how they execute.
@@ -396,6 +430,10 @@ impl Config {
         let path = path.into();
         let content = std::fs::read_to_string(&path)?;
         let config: Config = serde_yaml::from_str(&content)?;
+
+        // Validate port configuration
+        config.sandbox.port.validate()?;
+
         Ok(config)
     }
 
@@ -403,5 +441,77 @@ impl Config {
     pub fn example() -> String {
         let config = Config::default();
         serde_yaml::to_string(&config).unwrap_or_else(|_| String::from("# Failed to generate config"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_port_config_valid() {
+        let config = PortConfig {
+            enabled: true,
+            range_start: 3000,
+            range_end: 4000,
+        };
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_port_config_start_greater_than_end() {
+        let config = PortConfig {
+            enabled: true,
+            range_start: 4000,
+            range_end: 3000,
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must be less than"));
+    }
+
+    #[test]
+    fn test_port_config_well_known_ports() {
+        let config = PortConfig {
+            enabled: true,
+            range_start: 80,
+            range_end: 4000,
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("should be >= 1024"));
+    }
+
+    #[test]
+    fn test_port_config_boundary_values() {
+        // Test with maximum valid port
+        let config = PortConfig {
+            enabled: true,
+            range_start: 60000,
+            range_end: 65535,
+        };
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_port_config_range_too_small() {
+        let config = PortConfig {
+            enabled: true,
+            range_start: 3000,
+            range_end: 3005, // Only 5 ports
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("range is too small"));
+    }
+
+    #[test]
+    fn test_port_config_minimum_range() {
+        let config = PortConfig {
+            enabled: true,
+            range_start: 3000,
+            range_end: 3010, // Exactly 10 ports
+        };
+        assert!(config.validate().is_ok());
     }
 }
