@@ -44,43 +44,69 @@ chaba review --pr 123
 
 # Or specify a branch directly
 chaba review --branch feature/new-api
+
+# With AI agent analysis
+chaba review --pr 123 --with-agent
+
+# Thorough review with all agents
+chaba review --pr 123 --thorough
 ```
 
 **What happens automatically:**
-1. Fetches and pulls the PR branch
-2. Creates an isolated git worktree
-3. Sets up a sandbox environment with dependencies
-4. Launches AI agent sessions for automated analysis
-5. You review in parallel without touching your main workspace
+1. ✅ Fetches and pulls the PR branch
+2. ✅ Creates an isolated git worktree
+3. ✅ Sets up a sandbox environment with dependencies
+4. ✅ Launches AI agent sessions for automated analysis (optional)
+5. ✅ You review in parallel without touching your main workspace
 
-### Key Features (Planned)
+### Key Features
 
-#### 1. Git Worktree Integration
-- Automatic worktree creation per PR
-- Isolated environments with no impact on your main workspace
-- Parallel branch management
+#### 1. Git Worktree Integration ✅
+- ✅ Automatic worktree creation per PR
+- ✅ Isolated environments with no impact on your main workspace
+- ✅ Parallel branch management
+- ✅ State persistence for tracking active reviews
 
-#### 2. Automated Sandbox Environments
-- Dependency installation per worktree
-- Environment variable configuration
-- Automatic port assignment for development servers
+#### 2. Automated Sandbox Environments ✅
+- ✅ Project type detection (Node.js, Rust, Python, Go)
+- ✅ Dependency installation per worktree
+- ✅ Environment variable configuration (.env file copying)
+- ✅ Automatic port assignment for development servers (3000-4000)
+- ✅ Package manager auto-detection (npm, yarn, pnpm, bun, cargo)
 
-#### 3. AI Agent Integration
-- **Claude Code**: Automated source review and analysis
-- **Codex**: Code quality checks and second opinions
-- **Gemini**: Multi-perspective analysis
-- **MCP Integration**: Playwright tests, API debugging
+#### 3. AI Agent Integration ✅
+- ✅ **Claude Code**: Automated source review and analysis
+- ✅ **Codex**: Code quality checks and second opinions
+- ✅ **Gemini**: Multi-perspective analysis
+- ✅ Parallel execution for faster reviews
+- ✅ Structured finding reports with severity and categories
+- ⬜ **MCP Integration**: Playwright tests, API debugging (Phase 4)
 
-#### 4. Simple CLI Interface
+#### 4. Simple CLI Interface ✅
 ```bash
 # Review a PR
 chaba review --pr 123
 
-# Debug mode with Playwright
-chaba debug --pr 456 --with-playwright
+# Review with AI agent analysis
+chaba review --pr 123 --with-agent
+
+# Thorough review with all agents
+chaba review --pr 123 --thorough
+
+# View agent analysis results
+chaba agent-result --pr 123
+
+# List active reviews
+chaba list
+
+# Check review status
+chaba status --pr 123
 
 # Cleanup after review
 chaba cleanup --pr 123
+
+# Initialize configuration
+chaba config --local
 ```
 
 ### Use Case: Parallel Review Workflow
@@ -109,31 +135,90 @@ Now you have:
 
 ### Roadmap
 
-- [ ] **Phase 1**: Basic git worktree CLI operations
-- [ ] **Phase 2**: Automated sandbox environment setup
-- [ ] **Phase 3**: AI agent integration (Claude Code, Codex, Gemini)
+- [x] **Phase 1**: Basic git worktree CLI operations ✅
+  - [x] Git worktree creation and management
+  - [x] State persistence
+  - [x] CLI commands (review, cleanup, list, status, config)
+
+- [x] **Phase 2**: Automated sandbox environment setup ✅
+  - [x] Project type detection
+  - [x] Dependency installation (Node.js, Rust, Python, Go)
+  - [x] Port management
+  - [x] Environment variable copying
+
+- [x] **Phase 3**: AI agent integration ✅
+  - [x] Claude Code integration
+  - [x] Codex integration
+  - [x] Gemini integration
+  - [x] Parallel execution
+  - [x] Structured analysis reports
+  - [x] agent-result command
+
 - [ ] **Phase 4**: MCP integration (Playwright, API debugging)
 - [ ] **Phase 5**: Build automation & simulator launching
+- [ ] **Phase 6**: npm distribution
 
-### Technology Stack (Planned)
+### Technology Stack
 
-- **Language**: Rust or TypeScript
-- **Git Operations**: `git worktree`, `git branch`, `gh` CLI
-- **AI Integration**: Claude Code SDK, MCP (Model Context Protocol)
-- **Testing**: Playwright MCP integration
-- **Configuration**: YAML / TOML
+- **Language**: Rust 2021 Edition
+- **Git Operations**: `git2` crate, `gh` CLI
+- **AI Integration**: Command-line interfaces for Claude, Codex, Gemini
+- **Async Runtime**: Tokio
+- **Configuration**: YAML (serde_yaml)
+- **Testing**: 56 tests (unit + integration)
+- **CLI Framework**: clap v4
 
-### Installation (Coming Soon)
+### Installation
+
+#### From Source (Current)
 
 ```bash
-# Via Homebrew (planned)
-brew install chaba
+# Clone the repository
+git clone https://github.com/Nenene01/chaba.git
+cd chaba
 
-# Via Cargo (planned)
+# Build and install
+cargo install --path .
+
+# Verify installation
+chaba --version
+```
+
+#### Via Cargo (Planned)
+```bash
 cargo install chaba
+```
 
-# Via npm (planned)
+#### Via Homebrew (Planned)
+```bash
+brew install chaba
+```
+
+#### Via npm (Planned)
+```bash
 npm install -g chaba
+```
+
+### Quick Start
+
+```bash
+# Initialize configuration (optional)
+chaba config --local
+
+# Start reviewing a PR
+chaba review --pr 123
+
+# Or with AI agent analysis
+chaba review --pr 123 --with-agent
+
+# View analysis results
+chaba agent-result --pr 123
+
+# List active reviews
+chaba list
+
+# Clean up when done
+chaba cleanup --pr 123
 ```
 
 ### Contributing
@@ -259,31 +344,90 @@ chaba review --pr 234
 
 ### ロードマップ
 
-- [ ] **Phase 1**: 基本的なgit worktree CLI操作
-- [ ] **Phase 2**: 自動sandbox環境セットアップ
-- [ ] **Phase 3**: AIエージェント統合（Claude Code、Codex、Gemini）
+- [x] **Phase 1**: 基本的なgit worktree CLI操作 ✅
+  - [x] Git worktreeの作成と管理
+  - [x] 状態の永続化
+  - [x] CLIコマンド（review, cleanup, list, status, config）
+
+- [x] **Phase 2**: 自動sandbox環境セットアップ ✅
+  - [x] プロジェクトタイプ検出
+  - [x] 依存関係インストール（Node.js, Rust, Python, Go）
+  - [x] ポート管理
+  - [x] 環境変数のコピー
+
+- [x] **Phase 3**: AIエージェント統合 ✅
+  - [x] Claude Code統合
+  - [x] Codex統合
+  - [x] Gemini統合
+  - [x] 並列実行
+  - [x] 構造化分析レポート
+  - [x] agent-resultコマンド
+
 - [ ] **Phase 4**: MCP統合（Playwright、APIデバッグ）
 - [ ] **Phase 5**: ビルド自動化 & シミュレータ起動
+- [ ] **Phase 6**: npm配布
 
-### 技術スタック（予定）
+### 技術スタック
 
-- **言語**: Rust または TypeScript
-- **Git操作**: `git worktree`, `git branch`, `gh` CLI
-- **AI統合**: Claude Code SDK, MCP (Model Context Protocol)
-- **テスト**: Playwright MCP統合
-- **設定**: YAML / TOML
+- **言語**: Rust 2021 Edition
+- **Git操作**: `git2` crate, `gh` CLI
+- **AI統合**: Claude, Codex, Geminiのコマンドラインインターフェース
+- **非同期ランタイム**: Tokio
+- **設定**: YAML (serde_yaml)
+- **テスト**: 56テスト（ユニット + 統合）
+- **CLIフレームワーク**: clap v4
 
-### インストール（近日公開）
+### インストール
+
+#### ソースから（現在）
 
 ```bash
-# Homebrew経由（予定）
-brew install chaba
+# リポジトリをクローン
+git clone https://github.com/Nenene01/chaba.git
+cd chaba
 
-# Cargo経由（予定）
+# ビルドとインストール
+cargo install --path .
+
+# インストール確認
+chaba --version
+```
+
+#### Cargo経由（予定）
+```bash
 cargo install chaba
+```
 
-# npm経由（予定）
+#### Homebrew経由（予定）
+```bash
+brew install chaba
+```
+
+#### npm経由（予定）
+```bash
 npm install -g chaba
+```
+
+### クイックスタート
+
+```bash
+# 設定の初期化（オプション）
+chaba config --local
+
+# PRのレビューを開始
+chaba review --pr 123
+
+# AIエージェント分析を含む
+chaba review --pr 123 --with-agent
+
+# 分析結果を表示
+chaba agent-result --pr 123
+
+# アクティブなレビューを一覧表示
+chaba list
+
+# 完了後のクリーンアップ
+chaba cleanup --pr 123
 ```
 
 ### コントリビューション

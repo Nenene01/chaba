@@ -1,6 +1,39 @@
+//! Error types for Chaba.
+//!
+//! This module defines all error types that can occur during Chaba operations.
+//! All errors implement the `std::error::Error` trait via `thiserror`.
+//!
+//! # Examples
+//!
+//! ```rust
+//! use chaba::error::{ChabaError, Result};
+//!
+//! fn example() -> Result<()> {
+//!     // Operations that might fail
+//!     Err(ChabaError::NotInGitRepo)
+//! }
+//! ```
+
 use std::path::PathBuf;
 use thiserror::Error;
 
+/// Error types for Chaba operations.
+///
+/// This enum covers all possible errors that can occur during:
+/// - Git operations (worktree creation, branch fetching)
+/// - GitHub CLI operations (PR information retrieval)
+/// - Configuration loading and parsing
+/// - State management
+/// - AI agent execution
+///
+/// # Examples
+///
+/// ```rust
+/// use chaba::error::ChabaError;
+///
+/// let err = ChabaError::PrNotFound(123);
+/// assert_eq!(err.to_string(), "Pull request #123 not found");
+/// ```
 #[derive(Error, Debug)]
 pub enum ChabaError {
     #[error("Git operation failed: {0}")]

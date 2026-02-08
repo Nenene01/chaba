@@ -1,31 +1,111 @@
+//! Data structures for AI agent code review analysis.
+//!
+//! This module defines the core data types for storing and managing
+//! AI agent analysis results, including findings, severity levels,
+//! and categories.
+//!
+//! # Examples
+//!
+//! ```rust
+//! use chaba::core::review_analysis::{ReviewAnalysis, Finding, Severity, Category};
+//!
+//! // Create a new analysis
+//! let mut analysis = ReviewAnalysis::new("claude".to_string());
+//!
+//! // Add a finding
+//! let finding = Finding::new(
+//!     Severity::High,
+//!     Category::Security,
+//!     "SQL Injection vulnerability".to_string(),
+//!     "User input is not sanitized".to_string(),
+//! );
+//!
+//! analysis.add_finding(finding);
+//!
+//! // Count findings by severity
+//! assert_eq!(analysis.count_by_severity(&Severity::High), 1);
+//! ```
+
 use serde::{Deserialize, Serialize};
 
-/// Severity level of a finding
+/// Severity level of a code finding.
+///
+/// Severity levels are ordered from most to least severe:
+/// Critical > High > Medium > Low > Info
+///
+/// # JSON Serialization
+///
+/// Serializes to lowercase strings:
+/// - `Critical` → `"critical"`
+/// - `High` → `"high"`
+/// - etc.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
+    /// Critical issues requiring immediate attention
     Critical,
+    /// High priority issues that should be addressed soon
     High,
+    /// Medium priority issues for consideration
     Medium,
+    /// Low priority issues or minor suggestions
     Low,
+    /// Informational notes
     Info,
 }
 
-/// Category of a finding
+/// Category of a code finding.
+///
+/// Categories help organize findings by their nature and impact area.
+///
+/// # JSON Serialization
+///
+/// Serializes to kebab-case strings:
+/// - `BestPractice` → `"best-practice"`
+/// - `CodeQuality` → `"code-quality"`
+/// - etc.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Category {
+    /// Security vulnerabilities and issues
     Security,
+    /// Performance problems and optimizations
     Performance,
+    /// Best practice violations
     BestPractice,
+    /// Code quality concerns
     CodeQuality,
+    /// Architectural design issues
     Architecture,
+    /// Testing-related issues
     Testing,
+    /// Documentation problems
     Documentation,
+    /// Other uncategorized findings
     Other,
 }
 
-/// Individual finding from an agent
+/// Individual finding from an AI agent.
+///
+/// Represents a single issue, suggestion, or observation found during
+/// code review. Each finding has a severity level, category, and
+/// optional file location.
+///
+/// # Examples
+///
+/// ```rust
+/// use chaba::core::review_analysis::{Finding, Severity, Category};
+///
+/// let finding = Finding::new(
+///     Severity::High,
+///     Category::Security,
+///     "SQL Injection vulnerability".to_string(),
+///     "User input is not sanitized".to_string(),
+/// )
+/// .with_file("src/database.rs".to_string())
+/// .with_line(42)
+/// .with_suggestion("Use parameterized queries".to_string());
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Finding {
     /// Severity level
@@ -35,10 +115,14 @@ pub struct Finding {
     pub category: Category,
 
     /// File path (optional)
+    ///
+    /// Omitted from JSON if not present.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file: Option<String>,
 
     /// Line number (optional)
+    ///
+    /// Omitted from JSON if not present.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line: Option<u32>,
 
@@ -48,21 +132,54 @@ pub struct Finding {
     /// Detailed description
     pub description: String,
 
-    /// Suggested fix or improvement
+    /// Suggested fix or improvement (optional)
+    ///
+    /// Omitted from JSON if not present.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggestion: Option<String>,
 }
 
-/// Analysis result from a single agent
+/// Analysis result from a single AI agent.
+///
+/// Contains all findings from one agent's review of a PR, along with
+/// metadata like timestamp and optional score.
+///
+/// # Examples
+///
+/// ```rust
+/// use chaba::core::review_analysis::{ReviewAnalysis, Finding, Severity, Category};
+///
+/// // Create analysis
+/// let mut analysis = ReviewAnalysis::new("claude".to_string());
+///
+/// // Add findings
+/// analysis.add_finding(Finding::new(
+///     Severity::Medium,
+///     Category::CodeQuality,
+///     "Complex function".to_string(),
+///     "Consider breaking this into smaller functions".to_string(),
+/// ));
+///
+/// // Set score
+/// analysis.set_score(4.0);
+///
+/// // Count findings
+/// assert_eq!(analysis.count_by_severity(&Severity::Medium), 1);
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReviewAnalysis {
     /// Agent name (claude, codex, gemini)
     pub agent: String,
 
     /// Analysis timestamp (ISO 8601)
+    ///
+    /// Automatically set to current time when created.
     pub timestamp: String,
 
     /// Overall score (0.0 - 5.0)
+    ///
+    /// Optional quality score for the code.
+    /// Omitted from JSON if not set.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub score: Option<f32>,
 
@@ -70,6 +187,9 @@ pub struct ReviewAnalysis {
     pub findings: Vec<Finding>,
 
     /// Raw output from agent (fallback)
+    ///
+    /// Used when structured parsing fails.
+    /// Omitted from JSON if not present.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_output: Option<String>,
 }

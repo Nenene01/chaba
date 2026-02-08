@@ -1,35 +1,127 @@
+//! Configuration management for Chaba.
+//!
+//! This module provides configuration structures for all Chaba features:
+//! - Worktree management settings
+//! - Sandbox environment configuration
+//! - AI agent integration settings
+//!
+//! # Configuration File Locations
+//!
+//! Chaba looks for configuration in the following order:
+//! 1. `./chaba.yaml` (current directory)
+//! 2. `~/.config/chaba/chaba.yaml` (user config directory)
+//! 3. Default values (if no config file exists)
+//!
+//! # Example Configuration
+//!
+//! ```yaml
+//! worktree:
+//!   base_dir: ~/reviews
+//!   naming_template: pr-{pr}
+//!   auto_cleanup: true
+//!   keep_days: 7
+//!
+//! sandbox:
+//!   auto_install_deps: true
+//!   copy_env_from_main: true
+//!   node:
+//!     package_manager: auto
+//!   port:
+//!     enabled: true
+//!     range_start: 3000
+//!     range_end: 4000
+//!
+//! agents:
+//!   enabled: true
+//!   default_agents:
+//!     - claude
+//!   thorough_agents:
+//!     - claude
+//!     - codex
+//!     - gemini
+//!   timeout: 600
+//!   parallel: true
+//! ```
+
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::error::Result;
 
+/// Main configuration structure for Chaba.
+///
+/// Contains all configuration sections for worktree management,
+/// sandbox environment setup, and AI agent integration.
+///
+/// # Examples
+///
+/// ```rust
+/// use chaba::Config;
+///
+/// // Load configuration from file or use defaults
+/// let config = Config::load().unwrap();
+///
+/// // Access worktree configuration
+/// println!("Base directory: {}", config.worktree.base_dir.display());
+///
+/// // Access sandbox configuration
+/// println!("Auto install deps: {}", config.sandbox.auto_install_deps);
+///
+/// // Access agents configuration
+/// println!("Agents enabled: {}", config.agents.enabled);
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    /// Worktree management settings
     #[serde(default)]
     pub worktree: WorktreeConfig,
 
+    /// Sandbox environment settings
     #[serde(default)]
     pub sandbox: SandboxConfig,
 
+    /// AI agent integration settings
     #[serde(default)]
     pub agents: AgentsConfig,
 }
 
+/// Configuration for git worktree management.
+///
+/// Controls where and how worktrees are created for PR review environments.
+///
+/// # Default Values
+///
+/// - `base_dir`: `~/reviews`
+/// - `naming_template`: `"pr-{pr}"`
+/// - `auto_cleanup`: `true`
+/// - `keep_days`: `7`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorktreeConfig {
     /// Base directory for creating worktrees
+    ///
+    /// Default: `~/reviews`
     #[serde(default = "default_base_dir")]
     pub base_dir: PathBuf,
 
-    /// Naming template for worktrees (e.g., "pr-{pr}")
+    /// Naming template for worktrees
+    ///
+    /// Use `{pr}` as placeholder for PR number.
+    ///
+    /// Default: `"pr-{pr}"`
+    ///
+    /// Examples: `"pr-{pr}"`, `"review-{pr}"`, `"feature-{pr}"`
     #[serde(default = "default_naming_template")]
     pub naming_template: String,
 
     /// Auto cleanup old worktrees
+    ///
+    /// Default: `true`
     #[serde(default = "default_auto_cleanup")]
     pub auto_cleanup: bool,
 
     /// Days to keep worktrees before auto cleanup
+    ///
+    /// Default: `7`
     #[serde(default = "default_keep_days")]
     pub keep_days: u32,
 }
@@ -151,25 +243,74 @@ impl Default for PortConfig {
     }
 }
 
+/// Configuration for AI agent integration.
+///
+/// Controls which AI agents are used for code review and how they execute.
+///
+/// # Available Agents
+///
+/// - `claude`: Claude Code (fast, general-purpose)
+/// - `codex`: OpenAI Codex (implementation expert)
+/// - `gemini`: Google Gemini (strategic analyst)
+///
+/// # Default Values
+///
+/// - `enabled`: `true`
+/// - `default_agents`: `["claude"]`
+/// - `thorough_agents`: `["claude", "codex", "gemini"]`
+/// - `timeout`: `600` (10 minutes)
+/// - `parallel`: `true`
+///
+/// # Examples
+///
+/// ```yaml
+/// agents:
+///   enabled: true
+///   default_agents:
+///     - claude
+///   thorough_agents:
+///     - claude
+///     - codex
+///     - gemini
+///   timeout: 600
+///   parallel: true
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentsConfig {
     /// Enable AI agent integration
+    ///
+    /// Default: `true`
     #[serde(default = "default_agents_enabled")]
     pub enabled: bool,
 
-    /// Default agents for --with-agent
+    /// Default agents for `--with-agent` flag
+    ///
+    /// Used for quick reviews.
+    ///
+    /// Default: `["claude"]`
     #[serde(default = "default_default_agents")]
     pub default_agents: Vec<String>,
 
-    /// Agents for --thorough review
+    /// Agents for `--thorough` flag
+    ///
+    /// Used for comprehensive multi-agent analysis.
+    ///
+    /// Default: `["claude", "codex", "gemini"]`
     #[serde(default = "default_thorough_agents")]
     pub thorough_agents: Vec<String>,
 
-    /// Timeout in seconds
+    /// Timeout in seconds for agent execution
+    ///
+    /// Default: `600` (10 minutes)
     #[serde(default = "default_agent_timeout")]
     pub timeout: u64,
 
-    /// Enable parallel execution
+    /// Enable parallel execution of agents
+    ///
+    /// When `true`, all agents run simultaneously.
+    /// When `false`, agents run sequentially.
+    ///
+    /// Default: `true`
     #[serde(default = "default_parallel")]
     pub parallel: bool,
 }
