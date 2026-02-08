@@ -62,12 +62,36 @@ impl AgentManager {
         let results = futures::future::join_all(tasks).await;
 
         let mut analyses = Vec::new();
-        for result in results {
+        let mut errors = Vec::new();
+
+        for (idx, result) in results.into_iter().enumerate() {
+            let agent_name = &agents[idx];
             match result {
-                Ok(Ok(analysis)) => analyses.push(analysis),
-                Ok(Err(e)) => eprintln!("Agent execution error: {}", e),
-                Err(e) => eprintln!("Task join error: {}", e),
+                Ok(Ok(analysis)) => {
+                    eprintln!("✓ {} completed analysis", agent_name);
+                    analyses.push(analysis);
+                }
+                Ok(Err(e)) => {
+                    eprintln!("✗ {} failed: {}", agent_name, e);
+                    errors.push((agent_name.clone(), e.to_string()));
+                }
+                Err(e) => {
+                    eprintln!("✗ {} task failed: {}", agent_name, e);
+                    errors.push((agent_name.clone(), e.to_string()));
+                }
             }
+        }
+
+        if !errors.is_empty() && analyses.is_empty() {
+            // All agents failed
+            eprintln!("\n⚠️  All agents failed to complete analysis");
+            eprintln!("Review the errors above and check:");
+            eprintln!("  - Agent CLI tools are installed (claude, codex, gemini)");
+            eprintln!("  - Network connectivity");
+            eprintln!("  - Agent timeout setting (current: {}s)", self.config.timeout);
+        } else if !errors.is_empty() {
+            // Some agents failed
+            eprintln!("\n⚠️  {} agent(s) failed, {} succeeded", errors.len(), analyses.len());
         }
 
         Ok(analyses)
@@ -81,12 +105,27 @@ impl AgentManager {
         worktree_path: &Path,
     ) -> Result<Vec<ReviewAnalysis>> {
         let mut analyses = Vec::new();
+        let mut errors = Vec::new();
 
         for agent in agents {
+            eprintln!("Running {} analysis...", agent);
             match Self::run_single_agent(agent, pr_number, worktree_path, self.config.timeout).await {
-                Ok(analysis) => analyses.push(analysis),
-                Err(e) => eprintln!("Agent {} error: {}", agent, e),
+                Ok(analysis) => {
+                    eprintln!("✓ {} completed", agent);
+                    analyses.push(analysis);
+                }
+                Err(e) => {
+                    eprintln!("✗ {} failed: {}", agent, e);
+                    errors.push((agent.clone(), e.to_string()));
+                }
             }
+        }
+
+        if !errors.is_empty() && analyses.is_empty() {
+            eprintln!("\n⚠️  All agents failed to complete analysis");
+            eprintln!("Check agent CLI tool installations and network connectivity");
+        } else if !errors.is_empty() {
+            eprintln!("\n⚠️  {} agent(s) failed, {} succeeded", errors.len(), analyses.len());
         }
 
         Ok(analyses)

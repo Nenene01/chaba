@@ -3,7 +3,49 @@ use tokio::fs;
 
 use crate::error::Result;
 
+/// Patterns that may indicate sensitive information
+const SENSITIVE_PATTERNS: &[&str] = &[
+    "PASSWORD",
+    "SECRET",
+    "PRIVATE_KEY",
+    "API_KEY",
+    "TOKEN",
+    "CREDENTIAL",
+    "AUTH",
+];
+
+/// Check if a file contains potentially sensitive information
+async fn check_sensitive_content(path: &Path) -> Result<Vec<String>> {
+    let content = fs::read_to_string(path).await?;
+    let mut warnings = Vec::new();
+
+    for line in content.lines() {
+        // Skip comments
+        if line.trim_start().starts_with('#') {
+            continue;
+        }
+
+        // Check for sensitive patterns
+        for pattern in SENSITIVE_PATTERNS {
+            if line.to_uppercase().contains(pattern) {
+                // Extract variable name
+                if let Some(var_name) = line.split('=').next() {
+                    warnings.push(var_name.trim().to_string());
+                    break;
+                }
+            }
+        }
+    }
+
+    Ok(warnings)
+}
+
 /// Copy environment files from main worktree to review worktree
+///
+/// This function will:
+/// 1. Check for potentially sensitive information
+/// 2. Warn the user about sensitive variables
+/// 3. Copy the files to the review environment
 pub async fn copy_env_files(
     main_worktree: &Path,
     review_worktree: &Path,
@@ -13,15 +55,36 @@ pub async fn copy_env_files(
     files.extend_from_slice(additional_files);
 
     let mut copied_count = 0;
+    let mut has_warnings = false;
 
     for file in files {
         let src = main_worktree.join(&file);
         if src.exists() {
+            // Check for sensitive content
+            if let Ok(warnings) = check_sensitive_content(&src).await {
+                if !warnings.is_empty() {
+                    if !has_warnings {
+                        eprintln!("⚠️  Warning: Potentially sensitive information detected");
+                        eprintln!("The following variables may contain secrets:");
+                        has_warnings = true;
+                    }
+                    eprintln!("\n  In {}:", file);
+                    for var in &warnings {
+                        eprintln!("    - {}", var);
+                    }
+                }
+            }
+
             let dst = review_worktree.join(&file);
             fs::copy(&src, &dst).await?;
             tracing::info!("Copied {} to review environment", file);
             copied_count += 1;
         }
+    }
+
+    if has_warnings {
+        eprintln!("\n💡 Tip: Consider using .env.example for review environments");
+        eprintln!("   or set copy_env_from_main=false in your config");
     }
 
     if copied_count > 0 {

@@ -48,9 +48,15 @@ impl GitOps {
     pub async fn add_worktree(&self, path: &Path, branch: &str) -> Result<()> {
         let repo_path = self.repo_root();
 
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| ChabaError::ConfigError(
+                format!("Invalid path (non-UTF8): {}", path.display())
+            ))?;
+
         let output = Command::new("git")
             .current_dir(&repo_path)
-            .args(["worktree", "add", path.to_str().unwrap(), branch])
+            .args(["worktree", "add", path_str, branch])
             .output()
             .await?;
 
@@ -69,9 +75,15 @@ impl GitOps {
     pub async fn remove_worktree(&self, path: &Path) -> Result<()> {
         let repo_path = self.repo_root();
 
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| ChabaError::ConfigError(
+                format!("Invalid path (non-UTF8): {}", path.display())
+            ))?;
+
         let output = Command::new("git")
             .current_dir(&repo_path)
-            .args(["worktree", "remove", path.to_str().unwrap(), "--force"])
+            .args(["worktree", "remove", path_str, "--force"])
             .output()
             .await?;
 

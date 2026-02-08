@@ -17,6 +17,26 @@
 use std::path::PathBuf;
 use thiserror::Error;
 
+/// Get platform-specific installation instructions for GitHub CLI
+fn get_gh_install_instructions() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "  macOS: brew install gh\n  or visit: https://cli.github.com"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "  Ubuntu/Debian: sudo apt install gh\n  Fedora: sudo dnf install gh\n  or visit: https://cli.github.com"
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "  Windows: winget install --id GitHub.cli\n  or: choco install gh\n  or visit: https://cli.github.com"
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        "  Visit: https://cli.github.com"
+    }
+}
+
 /// Error types for Chaba operations.
 ///
 /// This enum covers all possible errors that can occur during:
@@ -39,7 +59,7 @@ pub enum ChabaError {
     #[error("Git operation failed: {0}")]
     GitError(#[from] git2::Error),
 
-    #[error("GitHub CLI not found. Please install it: brew install gh")]
+    #[error("GitHub CLI not found. Please install it:\n{}", get_gh_install_instructions())]
     GhCliNotFound,
 
     #[error("GitHub CLI command failed: {0}")]
