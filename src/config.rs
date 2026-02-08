@@ -514,4 +514,66 @@ mod tests {
         };
         assert!(config.validate().is_ok());
     }
+
+    // Property-based tests
+    mod proptest_tests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn test_valid_port_ranges_always_pass(
+                start in 1024u16..60000u16,
+                range_size in 10u16..1000u16
+            ) {
+                let end = start.saturating_add(range_size).min(65535);
+                if end > start + 10 {
+                    let config = PortConfig {
+                        enabled: true,
+                        range_start: start,
+                        range_end: end,
+                    };
+                    prop_assert!(config.validate().is_ok());
+                }
+            }
+
+            #[test]
+            fn test_invalid_port_ranges_always_fail(
+                start in 0u16..1024u16,
+            ) {
+                let config = PortConfig {
+                    enabled: true,
+                    range_start: start,
+                    range_end: start + 100,
+                };
+                prop_assert!(config.validate().is_err());
+            }
+
+            #[test]
+            fn test_reversed_ranges_always_fail(
+                start in 1024u16..32000u16,
+                offset in 1u16..100u16,
+            ) {
+                let config = PortConfig {
+                    enabled: true,
+                    range_start: start + offset,
+                    range_end: start,
+                };
+                prop_assert!(config.validate().is_err());
+            }
+
+            #[test]
+            fn test_small_ranges_always_fail(
+                start in 1024u16..65530u16,
+                size in 1u16..10u16,
+            ) {
+                let config = PortConfig {
+                    enabled: true,
+                    range_start: start,
+                    range_end: start + size,
+                };
+                prop_assert!(config.validate().is_err());
+            }
+        }
+    }
 }

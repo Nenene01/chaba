@@ -229,6 +229,60 @@ impl WorktreeManager {
 
         let mut hasher = DefaultHasher::new();
         branch.hash(&mut hasher);
-        (hasher.finish() % 100000) as u32 + 90000 // Range: 90000-99999
+        (hasher.finish() % 10000) as u32 + 90000 // Range: 90000-99999
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hash_branch_name_range() {
+        let pr = WorktreeManager::hash_branch_name("feature/test");
+        assert!(pr >= 90000 && pr < 100000, "Hash should be in range 90000-99999");
+    }
+
+    #[test]
+    fn test_hash_branch_name_deterministic() {
+        let pr1 = WorktreeManager::hash_branch_name("feature/test");
+        let pr2 = WorktreeManager::hash_branch_name("feature/test");
+        assert_eq!(pr1, pr2, "Hash should be deterministic");
+    }
+
+    #[test]
+    fn test_hash_branch_name_different() {
+        let pr1 = WorktreeManager::hash_branch_name("feature/test1");
+        let pr2 = WorktreeManager::hash_branch_name("feature/test2");
+        assert_ne!(pr1, pr2, "Different branches should have different hashes");
+    }
+
+    // Property-based tests
+    mod proptest_tests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn test_hash_always_in_range(branch in "[a-zA-Z0-9/_-]{1,100}") {
+                let pr = WorktreeManager::hash_branch_name(&branch);
+                prop_assert!(pr >= 90000 && pr < 100000);
+            }
+
+            #[test]
+            fn test_hash_is_deterministic(branch in "[a-zA-Z0-9/_-]{1,100}") {
+                let pr1 = WorktreeManager::hash_branch_name(&branch);
+                let pr2 = WorktreeManager::hash_branch_name(&branch);
+                prop_assert_eq!(pr1, pr2);
+            }
+
+            #[test]
+            fn test_empty_string_does_not_panic(branch in ".*") {
+                // This test just ensures no panic occurs with any string
+                let pr = WorktreeManager::hash_branch_name(&branch);
+                // Allow any value - we're just testing for panics
+                prop_assert!(pr >= 90000);
+            }
+        }
     }
 }
