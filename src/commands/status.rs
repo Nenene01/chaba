@@ -13,6 +13,15 @@ pub async fn execute(pr: u32) -> Result<()> {
     println!("Branch:        {}", review.branch);
     println!("Path:          {}", review.worktree_path.display());
 
+    // Check if worktree actually exists
+    let worktree_exists = review.worktree_path.exists();
+    if !worktree_exists {
+        println!("Status:        ⚠️  MISSING (worktree was manually removed)");
+        println!("\n💡 Tip: Run 'chaba cleanup --force --pr {}' to clean up the state.", pr);
+    } else {
+        println!("Status:        ✓ Active");
+    }
+
     let created = review.created_at.with_timezone(&Local);
     let time_ago = format_time_ago(review.created_at);
     println!("Created:       {} ({})", created.format("%Y-%m-%d %H:%M:%S"), time_ago);
