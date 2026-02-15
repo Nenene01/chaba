@@ -6,3 +6,4 @@ pub mod merge;
 pub mod rebase;
 pub mod review;
 pub mod status;
+pub mod tui;

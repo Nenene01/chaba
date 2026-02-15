@@ -107,6 +107,9 @@ enum Commands {
         #[arg(short, long)]
         onto: String,
     },
+
+    /// Launch TUI (Terminal User Interface)
+    Tui,
 }
 
 #[tokio::main]
@@ -137,6 +140,7 @@ async fn main() {
         Commands::AgentResult { pr } => commands::agent_result::execute(pr).await,
         Commands::Merge { pr, from } => commands::merge::execute(pr, from).await,
         Commands::Rebase { pr, onto } => commands::rebase::execute(pr, onto).await,
+        Commands::Tui => commands::tui::execute().await,
     };
 
     if let Err(e) = result {
