@@ -52,6 +52,10 @@ enum Commands {
         /// Pull request number to clean up
         #[arg(short, long)]
         pr: u32,
+
+        /// Skip confirmation prompt (--force/--yes)
+        #[arg(short, long, alias = "yes")]
+        force: bool,
     },
 
     /// List active review environments
@@ -99,7 +103,7 @@ async fn main() {
             with_agent,
             thorough,
         } => commands::review::execute(pr, branch, force, worktree, with_agent, thorough).await,
-        Commands::Cleanup { pr } => commands::cleanup::execute(pr).await,
+        Commands::Cleanup { pr, force } => commands::cleanup::execute(pr, force).await,
         Commands::List => commands::list::execute().await,
         Commands::Status { pr } => commands::status::execute(pr).await,
         Commands::Config { local } => commands::config::execute(local).await,
