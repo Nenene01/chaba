@@ -27,5 +27,27 @@ pub async fn execute(local: bool) -> Result<()> {
     println!("✓ Created configuration file at: {}", config_path.display());
     println!("\nEdit this file to customize Chaba's behavior.");
 
+    // For local config, suggest adding to .gitignore
+    if local {
+        let gitignore_path = PathBuf::from(".gitignore");
+        let config_filename = "chaba.yaml";
+
+        // Check if .gitignore exists and if it already contains chaba.yaml
+        let should_suggest = if gitignore_path.exists() {
+            let gitignore_content = tokio::fs::read_to_string(&gitignore_path).await?;
+            !gitignore_content.lines().any(|line| {
+                let trimmed = line.trim();
+                trimmed == config_filename || trimmed == "/chaba.yaml"
+            })
+        } else {
+            true
+        };
+
+        if should_suggest {
+            println!("\n💡 Tip: Add 'chaba.yaml' to .gitignore to avoid committing local settings:");
+            println!("   echo 'chaba.yaml' >> .gitignore");
+        }
+    }
+
     Ok(())
 }
