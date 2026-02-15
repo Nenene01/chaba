@@ -7,5 +7,6 @@ pub mod port;
 pub mod project;
 pub mod review_analysis;
 pub mod sandbox;
+pub mod session;
 pub mod state;
 pub mod worktree;

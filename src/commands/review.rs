@@ -1,8 +1,10 @@
 use crate::config::Config;
 use crate::core::agent::AgentManager;
+use crate::core::session::SessionManager;
 use crate::core::state::State;
 use crate::core::worktree::WorktreeManager;
 use crate::error::Result;
+use std::path::PathBuf;
 
 pub async fn execute(
     pr: Option<u32>,
@@ -11,6 +13,7 @@ pub async fn execute(
     worktree: Option<String>,
     with_agent: bool,
     thorough: bool,
+    copy_session_from: Option<String>,
 ) -> Result<()> {
     let config = Config::load()?;
     let manager = WorktreeManager::new(config.clone())?;
@@ -36,6 +39,28 @@ pub async fn execute(
 
     if let Some(port) = review.port {
         println!("✓ Assigned port: {}", port);
+    }
+
+    // Copy session data if requested
+    if let Some(source_path_str) = copy_session_from {
+        println!("\n📋 Copying Claude Code session data...");
+
+        let session_manager = SessionManager::new()?;
+        let source_path = PathBuf::from(source_path_str);
+        let target_path = &review.worktree_path;
+
+        match session_manager.copy_session_data(&source_path, target_path).await {
+            Ok(true) => {
+                println!("✓ Session data copied successfully");
+            }
+            Ok(false) => {
+                println!("⚠️  No session data found at source path");
+            }
+            Err(e) => {
+                eprintln!("⚠️  Warning: Failed to copy session data: {}", e);
+                eprintln!("   Continuing with worktree creation...");
+            }
+        }
     }
 
     // Run AI agents if requested

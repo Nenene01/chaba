@@ -45,6 +45,10 @@ enum Commands {
         /// Run thorough AI agent analysis (uses all configured agents)
         #[arg(long)]
         thorough: bool,
+
+        /// Copy Claude Code session data from source worktree path
+        #[arg(long)]
+        copy_session_from: Option<String>,
     },
 
     /// Clean up a review environment
@@ -102,7 +106,8 @@ async fn main() {
             worktree,
             with_agent,
             thorough,
-        } => commands::review::execute(pr, branch, force, worktree, with_agent, thorough).await,
+            copy_session_from,
+        } => commands::review::execute(pr, branch, force, worktree, with_agent, thorough, copy_session_from).await,
         Commands::Cleanup { pr, force } => commands::cleanup::execute(pr, force).await,
         Commands::List => commands::list::execute().await,
         Commands::Status { pr } => commands::status::execute(pr).await,
