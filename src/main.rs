@@ -85,6 +85,28 @@ enum Commands {
         #[arg(short, long)]
         pr: u32,
     },
+
+    /// Merge a branch into the worktree
+    Merge {
+        /// Pull request number
+        #[arg(short, long)]
+        pr: u32,
+
+        /// Branch to merge from
+        #[arg(short, long)]
+        from: String,
+    },
+
+    /// Rebase the worktree onto another branch
+    Rebase {
+        /// Pull request number
+        #[arg(short, long)]
+        pr: u32,
+
+        /// Branch to rebase onto
+        #[arg(short, long)]
+        onto: String,
+    },
 }
 
 #[tokio::main]
@@ -113,6 +135,8 @@ async fn main() {
         Commands::Status { pr } => commands::status::execute(pr).await,
         Commands::Config { local } => commands::config::execute(local).await,
         Commands::AgentResult { pr } => commands::agent_result::execute(pr).await,
+        Commands::Merge { pr, from } => commands::merge::execute(pr, from).await,
+        Commands::Rebase { pr, onto } => commands::rebase::execute(pr, onto).await,
     };
 
     if let Err(e) = result {

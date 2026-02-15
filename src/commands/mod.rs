@@ -2,5 +2,7 @@ pub mod agent_result;
 pub mod cleanup;
 pub mod config;
 pub mod list;
+pub mod merge;
+pub mod rebase;
 pub mod review;
 pub mod status;

@@ -382,6 +382,112 @@ impl GitOps {
 
         Ok(stats)
     }
+
+    /// Check if worktree has uncommitted changes
+    pub async fn has_uncommitted_changes(&self, worktree_path: &Path) -> Result<bool> {
+        let status_output = self
+            .runner
+            .run(
+                "git",
+                &["status".as_ref(), "--porcelain".as_ref()],
+                worktree_path,
+            )
+            .await?;
+
+        Ok(!status_output.stdout.is_empty())
+    }
+
+    /// Merge a branch into the current branch in the worktree
+    ///
+    /// # Safety
+    ///
+    /// This operation:
+    /// - Checks for uncommitted changes before merging
+    /// - Detects merge conflicts
+    /// - Returns detailed error messages
+    pub async fn merge(&self, worktree_path: &Path, from_branch: &str) -> Result<()> {
+        // Check for uncommitted changes
+        if self.has_uncommitted_changes(worktree_path).await? {
+            return Err(ChabaError::Other(anyhow::anyhow!(
+                "Cannot merge: worktree has uncommitted changes. Commit or stash them first."
+            )));
+        }
+
+        // Perform the merge
+        let merge_output = self
+            .runner
+            .run(
+                "git",
+                &["merge".as_ref(), from_branch.as_ref()],
+                worktree_path,
+            )
+            .await?;
+
+        if !merge_output.status.success() {
+            let error = String::from_utf8_lossy(&merge_output.stderr);
+
+            // Check for merge conflicts
+            if error.contains("CONFLICT") || error.contains("Automatic merge failed") {
+                return Err(ChabaError::Other(anyhow::anyhow!(
+                    "Merge conflict detected. Resolve conflicts manually in the worktree:\n{}",
+                    worktree_path.display()
+                )));
+            }
+
+            return Err(ChabaError::Other(anyhow::anyhow!(
+                "Merge failed: {}",
+                error
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Rebase the current branch onto another branch in the worktree
+    ///
+    /// # Safety
+    ///
+    /// This operation:
+    /// - Checks for uncommitted changes before rebasing
+    /// - Detects rebase conflicts
+    /// - Returns detailed error messages
+    pub async fn rebase(&self, worktree_path: &Path, onto_branch: &str) -> Result<()> {
+        // Check for uncommitted changes
+        if self.has_uncommitted_changes(worktree_path).await? {
+            return Err(ChabaError::Other(anyhow::anyhow!(
+                "Cannot rebase: worktree has uncommitted changes. Commit or stash them first."
+            )));
+        }
+
+        // Perform the rebase
+        let rebase_output = self
+            .runner
+            .run(
+                "git",
+                &["rebase".as_ref(), onto_branch.as_ref()],
+                worktree_path,
+            )
+            .await?;
+
+        if !rebase_output.status.success() {
+            let error = String::from_utf8_lossy(&rebase_output.stderr);
+
+            // Check for rebase conflicts
+            if error.contains("CONFLICT") || error.contains("could not apply") {
+                return Err(ChabaError::Other(anyhow::anyhow!(
+                    "Rebase conflict detected. Resolve conflicts manually in the worktree:\n{}\nThen run: git rebase --continue",
+                    worktree_path.display()
+                )));
+            }
+
+            return Err(ChabaError::Other(anyhow::anyhow!(
+                "Rebase failed: {}",
+                error
+            )));
+        }
+
+        Ok(())
+    }
 }
 
 /// Deprecated: Use GitOps::get_pr_branch() instead
