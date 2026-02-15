@@ -1,14 +1,14 @@
 {
-  "name": "@nenene01/chaba-darwin-arm64",
+  "name": "@nenene01/chaba-linux-arm64",
   "version": "0.1.0",
-  "description": "chaba binary for macOS Apple Silicon (ARM64)",
+  "description": "chaba binary for Linux ARM64",
   "repository": {
     "type": "git",
     "url": "https://github.com/Nenene01/chaba.git"
   },
   "license": "MIT",
   "os": [
-    "darwin"
+    "linux"
   ],
   "cpu": [
     "arm64"

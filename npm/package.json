@@ -43,5 +43,9 @@
     "@nenene01/chaba-linux-x64": "0.1.0",
     "@nenene01/chaba-linux-arm64": "0.1.0",
     "@nenene01/chaba-win32-x64": "0.1.0"
+  },
+  "publishConfig": {
+    "provenance": true,
+    "access": "public"
   }
 }
