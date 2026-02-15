@@ -1,3 +1,4 @@
+use crate::core::git::GitOps;
 use crate::core::state::State;
 use crate::error::{ChabaError, Result};
 use chrono::Local;
@@ -7,6 +8,8 @@ pub async fn execute(pr: u32) -> Result<()> {
     let review = state
         .get_review(pr)
         .ok_or(ChabaError::WorktreeNotFound(pr))?;
+
+    let git_ops = GitOps::open()?;
 
     println!("🍵 Review Environment Status\n");
     println!("PR Number:     #{}", review.pr_number);
@@ -37,6 +40,39 @@ pub async fn execute(pr: u32) -> Result<()> {
     println!("\nSandbox Setup:");
     println!("  Dependencies: {}", if review.deps_installed { "✓ Installed" } else { "✗ Not installed" });
     println!("  Environment:  {}", if review.env_copied { "✓ Copied" } else { "✗ Not copied" });
+
+    // Show Git statistics if worktree exists
+    if worktree_exists {
+        if let Ok(stats) = git_ops.get_stats(&review.worktree_path).await {
+            println!("\nGit Status:");
+
+            if let Some(ref upstream) = stats.upstream_branch {
+                println!("  Upstream:     {}", upstream);
+            }
+
+            if stats.files_changed > 0 || stats.lines_added > 0 || stats.lines_deleted > 0 {
+                println!(
+                    "  Changes:      {} file(s), +{} -{} lines",
+                    stats.files_changed, stats.lines_added, stats.lines_deleted
+                );
+            } else {
+                println!("  Changes:      No uncommitted changes");
+            }
+
+            if stats.commits_ahead > 0 || stats.commits_behind > 0 {
+                let mut status_parts = Vec::new();
+                if stats.commits_ahead > 0 {
+                    status_parts.push(format!("↑{} ahead", stats.commits_ahead));
+                }
+                if stats.commits_behind > 0 {
+                    status_parts.push(format!("↓{} behind", stats.commits_behind));
+                }
+                println!("  Commits:      {}", status_parts.join(", "));
+            } else if stats.upstream_branch.is_some() {
+                println!("  Commits:      Up to date");
+            }
+        }
+    }
 
     Ok(())
 }

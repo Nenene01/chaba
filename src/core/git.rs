@@ -6,6 +6,25 @@ use std::sync::Arc;
 use crate::core::command::{CommandRunner, LiveCommandRunner};
 use crate::error::{ChabaError, Result};
 
+/// Git statistics for a worktree
+#[derive(Debug, Clone, Default)]
+pub struct GitStats {
+    /// Number of files changed
+    pub files_changed: usize,
+    /// Number of lines added
+    pub lines_added: usize,
+    /// Number of lines deleted
+    pub lines_deleted: usize,
+    /// Number of commits ahead of upstream
+    pub commits_ahead: usize,
+    /// Number of commits behind upstream
+    pub commits_behind: usize,
+    /// Current branch name
+    pub current_branch: Option<String>,
+    /// Upstream branch name (e.g., "origin/main")
+    pub upstream_branch: Option<String>,
+}
+
 pub struct GitOps {
     repo: Repository,
     runner: Arc<dyn CommandRunner + Send + Sync>,
@@ -236,6 +255,132 @@ impl GitOps {
         }
 
         Ok(worktrees)
+    }
+
+    /// Get git statistics for a worktree
+    ///
+    /// Returns information about file changes, commits ahead/behind, etc.
+    pub async fn get_stats(&self, worktree_path: &Path) -> Result<GitStats> {
+        let mut stats = GitStats::default();
+
+        // Get current branch name
+        let branch_output = self
+            .runner
+            .run(
+                "git",
+                &["rev-parse".as_ref(), "--abbrev-ref".as_ref(), "HEAD".as_ref()],
+                worktree_path,
+            )
+            .await?;
+
+        if branch_output.status.success() {
+            stats.current_branch = Some(
+                String::from_utf8_lossy(&branch_output.stdout)
+                    .trim()
+                    .to_string(),
+            );
+        }
+
+        // Get upstream branch
+        if let Some(ref branch) = stats.current_branch {
+            let upstream_output = self
+                .runner
+                .run(
+                    "git",
+                    &[
+                        "rev-parse".as_ref(),
+                        "--abbrev-ref".as_ref(),
+                        format!("{}@{{upstream}}", branch).as_ref(),
+                    ],
+                    worktree_path,
+                )
+                .await;
+
+            if let Ok(output) = upstream_output {
+                if output.status.success() {
+                    stats.upstream_branch = Some(
+                        String::from_utf8_lossy(&output.stdout).trim().to_string(),
+                    );
+                }
+            }
+        }
+
+        // Get diff stats (files changed, lines added/deleted)
+        let diff_output = self
+            .runner
+            .run(
+                "git",
+                &["diff".as_ref(), "--stat".as_ref()],
+                worktree_path,
+            )
+            .await?;
+
+        if diff_output.status.success() {
+            let diff_text = String::from_utf8_lossy(&diff_output.stdout);
+            // Parse last line: "X files changed, Y insertions(+), Z deletions(-)"
+            if let Some(summary_line) = diff_text.lines().last() {
+                if let Some(files_part) = summary_line.split(',').next() {
+                    if let Some(num_str) = files_part.split_whitespace().next() {
+                        stats.files_changed = num_str.parse().unwrap_or(0);
+                    }
+                }
+
+                for part in summary_line.split(',') {
+                    if part.contains("insertion") {
+                        if let Some(num_str) = part.split_whitespace().next() {
+                            stats.lines_added = num_str.parse().unwrap_or(0);
+                        }
+                    } else if part.contains("deletion") {
+                        if let Some(num_str) = part.split_whitespace().next() {
+                            stats.lines_deleted = num_str.parse().unwrap_or(0);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Get commits ahead/behind
+        if let Some(ref upstream) = stats.upstream_branch {
+            // Commits ahead
+            let ahead_output = self
+                .runner
+                .run(
+                    "git",
+                    &[
+                        "rev-list".as_ref(),
+                        "--count".as_ref(),
+                        format!("{}..HEAD", upstream).as_ref(),
+                    ],
+                    worktree_path,
+                )
+                .await?;
+
+            if ahead_output.status.success() {
+                let ahead_str = String::from_utf8_lossy(&ahead_output.stdout).trim().to_string();
+                stats.commits_ahead = ahead_str.parse().unwrap_or(0);
+            }
+
+            // Commits behind
+            let behind_output = self
+                .runner
+                .run(
+                    "git",
+                    &[
+                        "rev-list".as_ref(),
+                        "--count".as_ref(),
+                        format!("HEAD..{}", upstream).as_ref(),
+                    ],
+                    worktree_path,
+                )
+                .await?;
+
+            if behind_output.status.success() {
+                let behind_str = String::from_utf8_lossy(&behind_output.stdout).trim().to_string();
+                stats.commits_behind = behind_str.parse().unwrap_or(0);
+            }
+        }
+
+        Ok(stats)
     }
 }
 
