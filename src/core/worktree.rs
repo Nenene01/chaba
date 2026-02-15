@@ -1,5 +1,6 @@
 use chrono::Utc;
 use std::path::{Path, PathBuf};
+use path_clean::PathClean;
 
 use crate::config::Config;
 use crate::core::{git::GitOps, state::{ReviewState, State}};
@@ -16,89 +17,35 @@ impl WorktreeManager {
         Ok(WorktreeManager { git, config })
     }
 
-    /// Validate a path to prevent path traversal and symlink attacks
+    /// This function ensures that the resolved path is within the allowed `base_dir`.
+    /// It works even if the paths do not exist on the filesystem.
     ///
     /// This function:
-    /// 1. Checks for parent directory (..) components
-    /// 2. Resolves symlinks via canonicalization
-    /// 3. Ensures the resolved path is within the allowed base directory
+    /// 1. Handles both absolute and relative paths.
+    /// 2. Normalizes the path, resolving `.` and `..` components.
+    /// 3. Ensures the resulting path is inside the `base_dir`.
     fn validate_path_secure(path: &Path, base_dir: &Path) -> Result<PathBuf> {
-        use std::path::Component;
+        // Clean the base_dir to get a canonical representation without FS access
+        let cleaned_base = base_dir.clean();
 
-        // Check for parent directory traversal
-        for component in path.components() {
-            if matches!(component, Component::ParentDir) {
-                return Err(ChabaError::ConfigError(
-                    "Invalid path: parent directory (..) is not allowed".to_string()
-                ));
-            }
-        }
-
-        // Resolve the base directory to its canonical form
-        let canonical_base = base_dir.canonicalize()
-            .map_err(|e| ChabaError::ConfigError(
-                format!("Failed to resolve base directory {}: {}", base_dir.display(), e)
-            ))?;
-
-        // Resolve the path to its canonical form
-        // For non-existent paths, validate the parent exists and is within base_dir
-        let canonical_path = if path.exists() {
-            path.canonicalize()
-                .map_err(|e| ChabaError::ConfigError(
-                    format!("Failed to resolve path {}: {}", path.display(), e)
-                ))?
+        // If the provided path is absolute, clean it.
+        // If it's relative, join it to the base and then clean.
+        let cleaned_path = if path.is_absolute() {
+            path.clean()
         } else {
-            // Ensure parent exists or can be created within base_dir
-            if let Some(parent) = path.parent() {
-                if parent.exists() {
-                    let canonical_parent = parent.canonicalize()
-                        .map_err(|e| ChabaError::ConfigError(
-                            format!("Failed to resolve parent path {}: {}", parent.display(), e)
-                        ))?;
-
-                    // Verify parent is within base_dir
-                    if !canonical_parent.starts_with(&canonical_base) {
-                        return Err(ChabaError::ConfigError(
-                            format!("Invalid path: {} is outside base directory {}",
-                                canonical_parent.display(), canonical_base.display())
-                        ));
-                    }
-
-                    // Return the canonical parent joined with filename
-                    if let Some(filename) = path.file_name() {
-                        canonical_parent.join(filename)
-                    } else {
-                        return Err(ChabaError::ConfigError(
-                            "Invalid path: no filename".to_string()
-                        ));
-                    }
-                } else {
-                    // Parent doesn't exist - just verify the path would be within base_dir
-                    // when created (simple prefix check on the input path)
-                    if !path.starts_with(base_dir) {
-                        return Err(ChabaError::ConfigError(
-                            format!("Invalid path: {} is outside base directory {}",
-                                path.display(), base_dir.display())
-                        ));
-                    }
-                    path.to_path_buf()
-                }
-            } else {
-                return Err(ChabaError::ConfigError(
-                    "Invalid path: no parent directory".to_string()
-                ));
-            }
+            cleaned_base.join(path).clean()
         };
 
-        // Final check: ensure canonical path is within base directory
-        if canonical_path.exists() && !canonical_path.starts_with(&canonical_base) {
-            return Err(ChabaError::ConfigError(
-                format!("Invalid path: {} is outside base directory {}",
-                    canonical_path.display(), canonical_base.display())
-            ));
+        // Check if the cleaned path starts with the cleaned base directory.
+        if cleaned_path.starts_with(&cleaned_base) {
+            Ok(cleaned_path)
+        } else {
+            Err(ChabaError::ConfigError(format!(
+                "Path traversal detected. Path '{}' is outside of base directory '{}'",
+                path.display(),
+                base_dir.display()
+            )))
         }
-
-        Ok(canonical_path)
     }
 
 
@@ -118,15 +65,14 @@ impl WorktreeManager {
             _ => return Err(ChabaError::InvalidInput),
         };
 
-        // Determine worktree path
+        // Determine and validate worktree path
         let worktree_path = if let Some(custom) = custom_path {
             let path = PathBuf::from(custom);
-            // Use secure validation that checks for symlinks and path traversal
             Self::validate_path_secure(&path, &self.config.worktree.base_dir)?
         } else {
             let name = self.config.worktree.naming_template.replace("{pr}", &pr.to_string());
             let path = self.config.worktree.base_dir.join(name);
-            // Validate auto-generated path too
+            // Validate the auto-generated path to ensure it's clean and within the base dir.
             Self::validate_path_secure(&path, &self.config.worktree.base_dir)?
         };
 
@@ -159,8 +105,10 @@ impl WorktreeManager {
         }
 
         // Create base directory if it doesn't exist
-        if !self.config.worktree.base_dir.exists() {
-            tokio::fs::create_dir_all(&self.config.worktree.base_dir).await?;
+        if let Some(parent) = worktree_path.parent() {
+            if !parent.exists() {
+                tokio::fs::create_dir_all(parent).await?;
+            }
         }
 
         // Fetch the branch

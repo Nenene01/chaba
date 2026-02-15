@@ -59,6 +59,7 @@ serde_json = "1"
 
 # Async traits
 async-trait = "0.1"
+path-clean = "1.0.1"
 
 [dev-dependencies]
 tempfile = "3"
