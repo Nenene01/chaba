@@ -2,6 +2,7 @@ pub mod agent;
 pub mod command;
 pub mod env;
 pub mod git;
+pub mod hooks;
 pub mod installer;
 pub mod port;
 pub mod project;

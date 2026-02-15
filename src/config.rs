@@ -83,6 +83,10 @@ pub struct Config {
     /// AI agent integration settings
     #[serde(default)]
     pub agents: AgentsConfig,
+
+    /// Hooks configuration
+    #[serde(default)]
+    pub hooks: HooksConfig,
 }
 
 /// Configuration for git worktree management.
@@ -385,12 +389,39 @@ impl Default for AgentsConfig {
     }
 }
 
+/// Configuration for worktree lifecycle hooks.
+///
+/// Allows running custom commands at different stages of worktree lifecycle.
+///
+/// # Example
+///
+/// ```yaml
+/// hooks:
+///   post_create: |
+///     npm install
+///     echo "Setup complete for $CHABA_BRANCH"
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct HooksConfig {
+    /// Command to run after worktree creation
+    ///
+    /// Environment variables available:
+    /// - `CHABA_WORKTREE_PATH`: Absolute path to the worktree
+    /// - `CHABA_BRANCH`: Branch name
+    /// - `CHABA_PR`: PR number (if created from PR)
+    ///
+    /// Default: None
+    #[serde(default)]
+    pub post_create: Option<String>,
+}
+
 impl Default for Config {
     fn default() -> Self {
         Config {
             worktree: WorktreeConfig::default(),
             sandbox: SandboxConfig::default(),
             agents: AgentsConfig::default(),
+            hooks: HooksConfig::default(),
         }
     }
 }

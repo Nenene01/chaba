@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::core::agent::AgentManager;
+use crate::core::hooks::HookManager;
 use crate::core::session::SessionManager;
 use crate::core::state::State;
 use crate::core::worktree::WorktreeManager;
@@ -62,6 +63,10 @@ pub async fn execute(
             }
         }
     }
+
+    // Run post-create hook if configured
+    let hook_manager = HookManager::new(config.hooks.clone());
+    hook_manager.run_post_create(&review.worktree_path, &review.branch, review.pr_number);
 
     // Run AI agents if requested
     let run_agents = if with_agent || thorough {
